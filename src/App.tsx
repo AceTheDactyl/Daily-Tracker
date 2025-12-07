@@ -252,6 +252,73 @@ export default function App() {
     return colorMap[color] || '1';
   };
 
+  // Import events from Google Calendar
+  const importFromGoogleCalendar = async (date: Date) => {
+    if (!gcalService || !gcalAuthed) {
+      console.log('Google Calendar not authenticated');
+      return;
+    }
+
+    try {
+      setSaveStatus('saving');
+
+      // Get events for the selected day
+      const dayStart = new Date(date);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(date);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      const events = await gcalService.listEvents(
+        dayStart.toISOString(),
+        dayEnd.toISOString()
+      );
+
+      // Convert Google Calendar events to CheckIns
+      const newBeats: CheckIn[] = events.map((event: any) => {
+        const startTime = event.start.dateTime ? new Date(event.start.dateTime) : new Date(event.start.date);
+
+        // Try to match wave based on time
+        const wake = rhythmProfile.wakeTime ?? { hours: 8, minutes: 0 };
+        const wakeToday = new Date(startTime);
+        wakeToday.setHours(wake.hours, wake.minutes, 0, 0);
+        const diffMs = startTime.getTime() - wakeToday.getTime();
+        const hoursAwake = diffMs < 0 ? 0 : diffMs / (1000 * 60 * 60);
+        const matchedWave = rhythmProfile.waves.find(w => hoursAwake >= w.startHour && hoursAwake < w.endHour);
+
+        return {
+          id: `gcal-${event.id}`,
+          category: 'General',
+          task: event.summary || 'Untitled Event',
+          waveId: matchedWave?.id,
+          slot: startTime.toISOString(),
+          loggedAt: new Date().toISOString(),
+          note: event.description || `Imported from Google Calendar`,
+          done: false,
+          isAnchor: false
+        };
+      });
+
+      // Filter out events that already exist (by checking if ID starts with 'gcal-')
+      setCheckIns(prev => {
+        const existingGcalIds = new Set(
+          prev.filter(c => c.id.startsWith('gcal-')).map(c => c.id)
+        );
+        const uniqueNewBeats = newBeats.filter(b => !existingGcalIds.has(b.id));
+        return [...uniqueNewBeats, ...prev];
+      });
+
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 1200);
+
+      return newBeats.length;
+    } catch (error) {
+      console.error('Failed to import from Google Calendar:', error);
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+      return 0;
+    }
+  };
+
   const scheduleBeat = async (category: string, task: string, when: Date, note?: string, waveId?: string, isAnchor?: boolean) => {
     const entry: CheckIn = {
       id: Date.now().toString() + Math.random(),
@@ -473,15 +540,32 @@ export default function App() {
                     Connect Google Calendar
                   </button>
                 ) : (
-                  <label className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/70 border border-gray-800 text-sm cursor-pointer hover:bg-gray-800">
-                    <input
-                      type="checkbox"
-                      checked={syncEnabled}
-                      onChange={(e) => setSyncEnabled(e.target.checked)}
-                      className="rounded"
-                    />
-                    Sync to Calendar
-                  </label>
+                  <>
+                    <label className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/70 border border-gray-800 text-sm cursor-pointer hover:bg-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={syncEnabled}
+                        onChange={(e) => setSyncEnabled(e.target.checked)}
+                        className="rounded"
+                      />
+                      Sync to Calendar
+                    </label>
+                    <button
+                      onClick={async () => {
+                        const count = await importFromGoogleCalendar(selectedDate);
+                        if (count !== undefined && count > 0) {
+                          alert(`Imported ${count} event(s) from Google Calendar`);
+                        } else if (count === 0) {
+                          alert('No new events to import');
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm flex items-center gap-2"
+                      title="Import today's events from Google Calendar"
+                    >
+                      <Download className="w-4 h-4" />
+                      Import Events
+                    </button>
+                  </>
                 )}
               </>
             )}
