@@ -3,7 +3,7 @@ import {
   Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
   CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer,
-  Activity, TrendingUp, AlertTriangle, Gauge, FileText, Settings, Bell, BarChart3, Music, User
+  Activity, AlertTriangle, FileText, Settings, Bell, BarChart3, Music, User
 } from 'lucide-react';
 import { GoogleCalendarService } from './lib/googleCalendar';
 import { getDeltaHVState } from './lib/deltaHVEngine';
@@ -16,10 +16,13 @@ import type { RhythmPlanner, PlannerSuggestion, PlannerPreferences, CalendarServ
 import { notificationService } from './lib/notificationService';
 import type { NotificationPreferences, PermissionStatus } from './lib/notificationService';
 import { musicLibrary, EMOTIONAL_CATEGORIES, type EmotionalCategoryId } from './lib/musicLibrary';
+import { metricsHub, type EnhancedDeltaHVState } from './lib/metricsHub';
 import { AnalyticsPage } from './components/AnalyticsPage';
 import { MusicLibrary } from './components/MusicLibrary';
 import { UserProfilePage } from './components/UserProfilePage';
 import { RoadmapView } from './components/RoadmapView';
+// MetricsDisplay available for use in future enhancements
+// import { MetricsDisplay, InlineMetrics } from './components/MetricsDisplay';
 
 // Storage safety shim
 declare global {
@@ -179,8 +182,9 @@ export default function App() {
   const [gcalAuthed, setGcalAuthed] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(false);
 
-  // DeltaHV Metrics State
+  // DeltaHV Metrics State (Enhanced with metricsHub integration)
   const [deltaHVState, setDeltaHVState] = useState<DeltaHVState | null>(null);
+  const [enhancedMetrics, setEnhancedMetrics] = useState<EnhancedDeltaHVState | null>(null);
   const [deltaHVExpanded, setDeltaHVExpanded] = useState(false);
 
   // Rhythm State Engine (Phase 2)
@@ -395,6 +399,11 @@ export default function App() {
       const newDeltaHVState = getDeltaHVState(checkIns, journals, rhythmProfile, selectedDate);
       setDeltaHVState(newDeltaHVState);
 
+      // Update metricsHub with all data sources for comprehensive metric calculation
+      metricsHub.updateCheckIns(checkIns);
+      metricsHub.updateJournals(journals);
+      metricsHub.updateRhythmProfile(rhythmProfile);
+
       // Log ΔHV calculation to audit trail
       if (newDeltaHVState) {
         logDeltaHVCalculated(
@@ -411,7 +420,6 @@ export default function App() {
     }
   }, [checkIns, journals, rhythmProfile, selectedDate, isLoading]);
 
-  // Initialize Google Calendar with persistent auth
   useEffect(() => {
     const initGCal = async () => {
       const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -1175,48 +1183,115 @@ export default function App() {
 
             {deltaHVExpanded && (
               <div className="px-4 pb-4 space-y-4 border-t border-gray-800 pt-4">
-                {/* Four Core Metrics */}
+                {/* Four Core Metrics with Brain Regions */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {/* Symbolic Density */}
                   <div className="bg-gray-900/60 rounded-xl p-3 border border-violet-800/30">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Sparkles className="w-4 h-4 text-violet-400" />
-                      <span className="text-xs text-violet-300">Symbolic (S)</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">✨</span>
+                        <span className="text-xs text-violet-300">Symbolic (S)</span>
+                      </div>
+                      <p className="text-xl font-bold text-violet-400">{deltaHVState.symbolicDensity}%</p>
                     </div>
-                    <p className="text-xl font-bold text-violet-400">{deltaHVState.symbolicDensity}</p>
-                    <p className="text-xs text-gray-500">{deltaHVState.breakdown.glyphCount} glyphs, {deltaHVState.breakdown.intentionCount} intentions</p>
+                    <div className="flex flex-wrap gap-1 text-xs text-violet-400/70">
+                      <span title="Dorsolateral">🎯</span>
+                      <span title="Medial">🪞</span>
+                      <span title="Precuneus">🌌</span>
+                      <span title="Temporal">🏛️</span>
+                      <span title="Hippocampus">📝</span>
+                      <span title="Posterior">🧘</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{deltaHVState.breakdown.glyphCount} glyphs, {deltaHVState.breakdown.intentionCount} intentions</p>
                   </div>
 
                   {/* Resonance Coupling */}
                   <div className="bg-gray-900/60 rounded-xl p-3 border border-cyan-800/30">
-                    <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp className="w-4 h-4 text-cyan-400" />
-                      <span className="text-xs text-cyan-300">Resonance (R)</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🎯</span>
+                        <span className="text-xs text-cyan-300">Resonance (R)</span>
+                      </div>
+                      <p className="text-xl font-bold text-cyan-400">{deltaHVState.resonanceCoupling}%</p>
                     </div>
-                    <p className="text-xl font-bold text-cyan-400">{deltaHVState.resonanceCoupling}</p>
-                    <p className="text-xs text-gray-500">{deltaHVState.breakdown.alignedTasks}/{deltaHVState.breakdown.totalPlannedTasks} aligned</p>
+                    <div className="flex flex-wrap gap-1 text-xs text-cyan-400/70">
+                      <span title="Orbitofrontal">⚖️</span>
+                      <span title="Dorsal ACC">⚠️</span>
+                      <span title="Rostral ACC">💗</span>
+                      <span title="Premotor">🎬</span>
+                      <span title="Supplementary">🔄</span>
+                      <span title="Nucleus Accumbens">🎯</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{deltaHVState.breakdown.alignedTasks}/{deltaHVState.breakdown.totalPlannedTasks} aligned</p>
                   </div>
 
                   {/* Friction Coefficient */}
-                  <div className="bg-gray-900/60 rounded-xl p-3 border border-rose-800/30">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle className="w-4 h-4 text-rose-400" />
-                      <span className="text-xs text-rose-300">Friction (δφ)</span>
+                  <div className="bg-gray-900/60 rounded-xl p-3 border border-orange-800/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🌧️</span>
+                        <span className="text-xs text-orange-300">Friction (δφ)</span>
+                      </div>
+                      <p className="text-xl font-bold text-orange-400">{deltaHVState.frictionCoefficient}%</p>
                     </div>
-                    <p className="text-xl font-bold text-rose-400">{deltaHVState.frictionCoefficient}</p>
-                    <p className="text-xs text-gray-500">{deltaHVState.breakdown.missedTasks} missed, {deltaHVState.breakdown.delayedTasks} delayed</p>
+                    <div className="flex flex-wrap gap-1 text-xs text-orange-400/70">
+                      <span title="Subgenual">🌧️</span>
+                      <span title="Basolateral">⚡</span>
+                      <span title="Central">🚨</span>
+                      <span title="Paraventricular">🌊</span>
+                      <span title="Bed Nucleus">😰</span>
+                      <span title="Habenula">🚫</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{deltaHVState.breakdown.missedTasks} missed, {deltaHVState.breakdown.delayedTasks} delayed</p>
                   </div>
 
                   {/* Harmonic Stability */}
                   <div className="bg-gray-900/60 rounded-xl p-3 border border-emerald-800/30">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Gauge className="w-4 h-4 text-emerald-400" />
-                      <span className="text-xs text-emerald-300">Stability (H)</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">⚖️</span>
+                        <span className="text-xs text-emerald-300">Stability (H)</span>
+                      </div>
+                      <p className="text-xl font-bold text-emerald-400">{deltaHVState.harmonicStability}%</p>
                     </div>
-                    <p className="text-xl font-bold text-emerald-400">{deltaHVState.harmonicStability}</p>
-                    <p className="text-xs text-gray-500">{Object.values(deltaHVState.breakdown.segmentCoverage).filter(Boolean).length}/{rhythmProfile.waves.length} waves active</p>
+                    <div className="flex flex-wrap gap-1 text-xs text-emerald-400/70">
+                      <span title="Septal">😌</span>
+                      <span title="Dorsal Raphe">☮️</span>
+                      <span title="Median Raphe">🌅</span>
+                      <span title="Reticular">🔋</span>
+                      <span title="Vermis">🧘</span>
+                      <span title="Cerebellar">⚖️</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{Object.values(deltaHVState.breakdown.segmentCoverage).filter(Boolean).length}/{rhythmProfile.waves.length} waves active</p>
                   </div>
                 </div>
+
+                {/* Music Influence (if available) */}
+                {enhancedMetrics?.musicInfluence && enhancedMetrics.musicInfluence.authorshipScore > 0 && (
+                  <div className="bg-gray-900/40 rounded-xl p-3 border border-purple-800/30">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Music className="w-4 h-4 text-purple-400" />
+                        <span className="text-sm text-purple-300">Music Story Influence</span>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs">
+                        <span className="text-gray-400">
+                          Authorship: <span className="text-purple-400">{enhancedMetrics.musicInfluence.authorshipScore}%</span>
+                        </span>
+                        <span className="text-gray-400">
+                          Skip Ratio: <span className="text-cyan-400">{Math.round(enhancedMetrics.musicInfluence.skipRatio * 100)}%</span>
+                        </span>
+                        <span className={`capitalize ${
+                          enhancedMetrics.musicInfluence.emotionalTrajectory === 'rising' ? 'text-green-400' :
+                          enhancedMetrics.musicInfluence.emotionalTrajectory === 'processing' ? 'text-yellow-400' :
+                          'text-gray-400'
+                        }`}>
+                          {enhancedMetrics.musicInfluence.emotionalTrajectory}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Segment Coverage Visualization */}
                 <div className="bg-gray-900/40 rounded-xl p-3 border border-gray-800">
