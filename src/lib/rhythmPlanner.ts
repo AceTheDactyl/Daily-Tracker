@@ -17,6 +17,19 @@
 
 import { auditLog } from './auditLog';
 import type { RhythmState } from './rhythmStateEngine';
+import type { EnhancedDeltaHVState } from './metricsHub';
+
+/**
+ * DeltaHV metrics for planner decisions
+ */
+interface PlannerMetrics {
+  symbolic: number;
+  resonance: number;
+  friction: number;
+  stability: number;
+  deltaHV: number;
+  fieldState: string;
+}
 
 /**
  * Check-in structure (matches App.tsx)
@@ -237,6 +250,7 @@ export class RhythmPlanner {
   private listeners: Set<(suggestions: PlannerSuggestion[]) => void> = new Set();
   private preferencesListeners: Set<(prefs: PlannerPreferences) => void> = new Set();
   private autoScheduledEvents: Map<string, string> = new Map(); // suggestionId -> calendarEventId
+  private currentMetrics: PlannerMetrics | null = null; // DeltaHV metrics for decisions
 
   constructor(config: Partial<PlannerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -329,6 +343,29 @@ export class RhythmPlanner {
   updateCheckIns(checkIns: CheckIn[]): void {
     this.checkIns = checkIns;
     this.analyzeAndSuggest();
+  }
+
+  /**
+   * Update DeltaHV metrics for metric-driven decisions
+   */
+  updateMetrics(state: EnhancedDeltaHVState): void {
+    this.currentMetrics = {
+      symbolic: state.symbolicDensity,
+      resonance: state.resonanceCoupling,
+      friction: state.frictionCoefficient,
+      stability: state.harmonicStability,
+      deltaHV: state.deltaHV,
+      fieldState: state.fieldState,
+    };
+    // Re-analyze with new metrics
+    this.analyzeAndSuggest();
+  }
+
+  /**
+   * Get current metrics
+   */
+  getMetrics(): PlannerMetrics | null {
+    return this.currentMetrics;
   }
 
   /**
@@ -883,7 +920,8 @@ export class RhythmPlanner {
   }
 
   /**
-   * Check for friction patterns (missed/delayed tasks)
+   * Check for friction patterns using DeltaHV frictionCoefficient
+   * Uses actual metric values when available, falls back to task counting
    */
   private checkFrictionPatterns(now: Date): void {
     const todayCheckIns = this.checkIns.filter(c => sameDay(new Date(c.slot), now));
@@ -894,7 +932,21 @@ export class RhythmPlanner {
       return slotTime < now.getTime() - 15 * 60000;
     }).length;
 
-    if (overdueCount >= this.config.frictionThreshold) {
+    // Use actual DeltaHV friction coefficient if available
+    const actualFriction = this.currentMetrics?.friction ?? 0;
+    const fieldState = this.currentMetrics?.fieldState ?? 'dormant';
+
+    // Friction warning triggers:
+    // 1. High friction coefficient (>60) indicates systemic friction
+    // 2. OR fragmented field state indicates dissonance
+    // 3. OR traditional overdue task count exceeds threshold
+    const highFriction = actualFriction > 60;
+    const fragmentedState = fieldState === 'fragmented';
+    const manyOverdue = overdueCount >= this.config.frictionThreshold;
+
+    const shouldWarn = highFriction || fragmentedState || manyOverdue;
+
+    if (shouldWarn) {
       const existingWarning = this.suggestions.find(
         s => s.type === 'FRICTION_WARNING' && !s.dismissed
       );
@@ -902,12 +954,30 @@ export class RhythmPlanner {
 
       const slot = this.findNextAvailableSlot(10, now);
 
+      // Create contextual message based on friction source
+      let description = '';
+      let priority: 'low' | 'medium' | 'high' = 'medium';
+
+      if (highFriction && fragmentedState) {
+        description = `High friction detected (δφ: ${actualFriction}%) with fragmented rhythm. Your system needs recalibration.`;
+        priority = 'high';
+      } else if (highFriction) {
+        description = `Friction coefficient elevated (δφ: ${actualFriction}%). Consider taking a pause to realign intentions.`;
+        priority = actualFriction > 80 ? 'high' : 'medium';
+      } else if (fragmentedState) {
+        description = `Your rhythm field is fragmented. ${overdueCount} tasks overdue. Take a moment to reconnect with your flow.`;
+        priority = 'medium';
+      } else {
+        description = `${overdueCount} tasks are overdue. Consider rescheduling or taking a reset moment to regroup.`;
+        priority = overdueCount > 5 ? 'high' : 'medium';
+      }
+
       const suggestion: PlannerSuggestion = {
         id: generateId(),
         type: 'FRICTION_WARNING',
-        priority: 'high',
+        priority,
         title: '⚡ Schedule Friction Detected',
-        description: `${overdueCount} tasks are overdue. Consider rescheduling or taking a reset moment to regroup.`,
+        description,
         action: {
           type: 'create_event',
           payload: {
@@ -916,7 +986,9 @@ export class RhythmPlanner {
             start: slot?.start.toISOString(),
             end: slot?.end.toISOString(),
             durationMinutes: 10,
-            colorId: '11'
+            colorId: '11',
+            frictionCoefficient: actualFriction,
+            fieldState
           }
         },
         createdAt: new Date().toISOString(),
@@ -928,8 +1000,8 @@ export class RhythmPlanner {
       auditLog.addEntry(
         'AI_SUGGESTION',
         'warning',
-        `Friction warning: ${overdueCount} overdue tasks`,
-        { overdueCount, frictionThreshold: this.config.frictionThreshold }
+        `Friction warning: δφ=${actualFriction}%, ${overdueCount} overdue, field=${fieldState}`,
+        { overdueCount, frictionCoefficient: actualFriction, fieldState }
       );
     }
   }
@@ -1163,6 +1235,17 @@ export class RhythmPlanner {
       const focusDuration = (Date.now() - this.lastFocusStart.getTime()) / 60000;
       context += `- Current focus duration: ${Math.round(focusDuration)} minutes\n`;
       context += `- Break threshold: ${this.config.focusBreakThreshold} minutes\n`;
+    }
+
+    // Include DeltaHV metrics context
+    if (this.currentMetrics) {
+      context += `\nDeltaHV Metrics:\n`;
+      context += `- Symbolic (S): ${this.currentMetrics.symbolic}%\n`;
+      context += `- Resonance (R): ${this.currentMetrics.resonance}%\n`;
+      context += `- Friction (δφ): ${this.currentMetrics.friction}%\n`;
+      context += `- Stability (H): ${this.currentMetrics.stability}%\n`;
+      context += `- Overall ΔHV: ${this.currentMetrics.deltaHV}%\n`;
+      context += `- Field State: ${this.currentMetrics.fieldState}\n`;
     }
 
     return context;

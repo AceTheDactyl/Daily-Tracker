@@ -643,24 +643,104 @@ class NotificationService {
   }
 
   /**
-   * Send daily summary
+   * Send daily summary with full DeltaHV metric breakdown
    */
   sendDailySummary(stats: {
     completed: number;
     total: number;
     rhythmScore: number;
     deltaHV: number;
+    symbolic?: number;
+    resonance?: number;
+    friction?: number;
+    stability?: number;
+    fieldState?: string;
   }): Promise<string | null> {
     const completionRate = stats.total > 0
       ? Math.round((stats.completed / stats.total) * 100)
       : 0;
 
+    // Build comprehensive summary with metric breakdown
+    let body = `${stats.completed}/${stats.total} tasks (${completionRate}%) | ΔHV: ${stats.deltaHV}%`;
+
+    // Add metric breakdown if available
+    if (stats.symbolic !== undefined) {
+      body = `✨S:${stats.symbolic} 🎯R:${stats.resonance} 🌧️δφ:${stats.friction} ⚖️H:${stats.stability}\n`;
+      body += `${stats.completed}/${stats.total} beats | ${stats.fieldState || 'active'}`;
+    }
+
     return this.show({
       type: 'daily_summary',
       title: `${NOTIFICATION_ICONS.daily_summary} Daily Rhythm Summary`,
-      body: `${stats.completed}/${stats.total} tasks (${completionRate}%) | Score: ${stats.rhythmScore}% | ΔHV: ${stats.deltaHV}`,
+      body,
       tag: 'daily-summary',
       data: { action: 'view_summary', stats }
+    });
+  }
+
+  /**
+   * Send metric alert when a specific metric crosses a threshold
+   * Useful for real-time metric-driven interventions
+   */
+  sendMetricAlert(
+    metric: 'symbolic' | 'resonance' | 'friction' | 'stability',
+    value: number,
+    threshold: number,
+    direction: 'above' | 'below'
+  ): Promise<string | null> {
+    const metricLabels = {
+      symbolic: { icon: '✨', name: 'Symbolic (S)', goodDirection: 'above' },
+      resonance: { icon: '🎯', name: 'Resonance (R)', goodDirection: 'above' },
+      friction: { icon: '🌧️', name: 'Friction (δφ)', goodDirection: 'below' },
+      stability: { icon: '⚖️', name: 'Stability (H)', goodDirection: 'above' },
+    };
+
+    const info = metricLabels[metric];
+    const isGood = info.goodDirection === direction;
+
+    const title = isGood
+      ? `${info.icon} ${info.name} Improving!`
+      : `${info.icon} ${info.name} Alert`;
+
+    const body = direction === 'above'
+      ? `${info.name} has risen to ${value}% (threshold: ${threshold}%)`
+      : `${info.name} has dropped to ${value}% (threshold: ${threshold}%)`;
+
+    return this.show({
+      type: 'rhythm_state_change',
+      title,
+      body,
+      tag: `metric-alert-${metric}`,
+      requireInteraction: !isGood,
+      data: { action: 'view_metrics', metric, value, threshold, direction }
+    });
+  }
+
+  /**
+   * Send field state change notification
+   * Triggered when the DeltaHV field state transitions
+   */
+  sendFieldStateChange(
+    newState: 'coherent' | 'transitioning' | 'fragmented' | 'dormant',
+    previousState: string,
+    deltaHV: number
+  ): Promise<string | null> {
+    const stateInfo = {
+      coherent: { emoji: '🌟', message: 'Your rhythm is coherent and aligned!' },
+      transitioning: { emoji: '🌊', message: 'Your rhythm is in transition. Stay mindful.' },
+      fragmented: { emoji: '⚡', message: 'Your rhythm has become fragmented. Time to recenter.' },
+      dormant: { emoji: '🌙', message: 'Your rhythm field is dormant. Awaiting activation.' },
+    };
+
+    const info = stateInfo[newState];
+
+    return this.show({
+      type: 'rhythm_state_change',
+      title: `${info.emoji} Rhythm Field: ${newState}`,
+      body: `${info.message} (ΔHV: ${deltaHV}%)`,
+      tag: 'field-state-change',
+      requireInteraction: newState === 'fragmented',
+      data: { action: 'view_metrics', newState, previousState, deltaHV }
     });
   }
 

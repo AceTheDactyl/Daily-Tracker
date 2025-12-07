@@ -18,6 +18,24 @@ import type {
   BeatRoadmapConfig,
   MetricsSnapshot,
 } from './userProfile';
+import type { EnhancedDeltaHVState } from './metricsHub';
+
+/**
+ * Real-time DeltaHV state for recommendations
+ */
+interface LiveMetricState {
+  symbolic: number;
+  resonance: number;
+  friction: number;
+  stability: number;
+  deltaHV: number;
+  fieldState: 'coherent' | 'transitioning' | 'fragmented' | 'dormant';
+  musicInfluence?: {
+    skipRatio: number;
+    authorshipScore: number;
+    healingProgress: number;
+  };
+}
 
 // ============================================================================
 // Types
@@ -673,6 +691,7 @@ class RoadmapEngineService {
   private roadmaps: Roadmap[] = [];
   private recommendations: AIRecommendation[] = [];
   private listeners: Set<() => void> = new Set();
+  private liveMetrics: LiveMetricState | null = null;
 
   async initialize(): Promise<void> {
     try {
@@ -775,6 +794,172 @@ class RoadmapEngineService {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Update with live metrics from metricsHub
+   * Generates real-time recommendations based on field state
+   */
+  updateLiveMetrics(state: EnhancedDeltaHVState): void {
+    const previousState = this.liveMetrics?.fieldState;
+
+    this.liveMetrics = {
+      symbolic: state.symbolicDensity,
+      resonance: state.resonanceCoupling,
+      friction: state.frictionCoefficient,
+      stability: state.harmonicStability,
+      deltaHV: state.deltaHV,
+      fieldState: state.fieldState,
+      musicInfluence: state.musicInfluence ? {
+        skipRatio: state.musicInfluence.skipRatio,
+        authorshipScore: state.musicInfluence.authorshipScore,
+        healingProgress: state.musicInfluence.healingProgress,
+      } : undefined,
+    };
+
+    // Generate field-state-aware recommendations
+    const fieldStateRecs = this.generateFieldStateRecommendations(previousState);
+    fieldStateRecs.forEach(rec => {
+      const existing = this.recommendations.find(r => r.id === rec.id);
+      if (!existing) {
+        this.recommendations.push(rec);
+      }
+    });
+
+    this.notifyListeners();
+  }
+
+  /**
+   * Generate recommendations based on field state transitions
+   */
+  private generateFieldStateRecommendations(previousState?: string): AIRecommendation[] {
+    if (!this.liveMetrics) return [];
+
+    const recommendations: AIRecommendation[] = [];
+    const now = new Date().toISOString();
+    const { fieldState, symbolic, resonance, friction, stability, musicInfluence } = this.liveMetrics;
+
+    // Field state transition recommendations
+    if (previousState && previousState !== fieldState) {
+      if (fieldState === 'fragmented') {
+        recommendations.push({
+          id: `rec-field-fragmented-${Date.now()}`,
+          type: 'friction_reduction',
+          priority: 'high',
+          title: 'Field Fragmented - Recenter',
+          rationale: `Your rhythm field transitioned to fragmented state. δφ: ${friction}%, Stability: ${stability}%. The FEP suggests immediate action to reduce surprise.`,
+          suggestedAction: 'Pause and do a brief grounding exercise. Complete one anchor beat. Consider a 5-minute meditation.',
+          expectedOutcome: 'Field stabilization, reduced friction',
+          relatedBeat: 'Meditation',
+          confidence: 85,
+          createdAt: now,
+          expiresAt: new Date(Date.now() + 2 * 60 * 60000).toISOString(),
+        });
+      } else if (fieldState === 'coherent' && previousState !== 'coherent') {
+        recommendations.push({
+          id: `rec-field-coherent-${Date.now()}`,
+          type: 'pattern_insight',
+          priority: 'low',
+          title: 'Coherence Achieved!',
+          rationale: `Your rhythm field reached coherent state. S: ${symbolic}%, R: ${resonance}%, H: ${stability}%. This is optimal low-free-energy operation.`,
+          suggestedAction: 'Note what you did to reach this state. Consider tackling something challenging while coherent.',
+          expectedOutcome: 'Sustained coherence, productive flow',
+          confidence: 90,
+          createdAt: now,
+          expiresAt: new Date(Date.now() + 4 * 60 * 60000).toISOString(),
+        });
+      }
+    }
+
+    // Low symbolic density recommendations
+    if (symbolic < 30) {
+      recommendations.push({
+        id: `rec-symbolic-low-${Date.now()}`,
+        type: 'goal_alignment',
+        priority: symbolic < 15 ? 'high' : 'medium',
+        title: 'Symbolic Density Low',
+        rationale: `Symbolic (S) is at ${symbolic}%. Low symbolic density indicates disconnection from meaning and intention. Journaling increases glyphic resonance.`,
+        suggestedAction: 'Write in your journal about your current intentions. Use glyphs/emojis to express emotions symbolically.',
+        expectedOutcome: 'Increased symbolic density, clearer intention',
+        relatedBeat: 'Journal',
+        confidence: 75,
+        createdAt: now,
+        expiresAt: new Date(Date.now() + 6 * 60 * 60000).toISOString(),
+      });
+    }
+
+    // Low resonance recommendations
+    if (resonance < 40) {
+      recommendations.push({
+        id: `rec-resonance-low-${Date.now()}`,
+        type: 'energy_optimization',
+        priority: resonance < 25 ? 'high' : 'medium',
+        title: 'Resonance Coupling Low',
+        rationale: `Resonance (R) is at ${resonance}%. Low resonance indicates misalignment between intentions and actions. Completing aligned tasks increases resonance.`,
+        suggestedAction: 'Focus on completing one beat that aligns with your stated goals. Check your task-goal alignment.',
+        expectedOutcome: 'Improved intention-action coupling',
+        relatedBeat: 'General',
+        confidence: 70,
+        createdAt: now,
+        expiresAt: new Date(Date.now() + 4 * 60 * 60000).toISOString(),
+      });
+    }
+
+    // Music authorship insights
+    if (musicInfluence && musicInfluence.authorshipScore > 70) {
+      recommendations.push({
+        id: `rec-authorship-high-${Date.now()}`,
+        type: 'pattern_insight',
+        priority: 'low',
+        title: 'Strong Story Authorship',
+        rationale: `Your authorship score is ${musicInfluence.authorshipScore}%. You're actively controlling your emotional narrative through music choices.`,
+        suggestedAction: musicInfluence.healingProgress > 50
+          ? 'Your healing indicators are strong. Continue processing through music.'
+          : 'Keep engaging with music mindfully. Your choices are shaping your emotional trajectory.',
+        expectedOutcome: 'Continued emotional sovereignty',
+        confidence: 80,
+        createdAt: now,
+        expiresAt: new Date(Date.now() + 8 * 60 * 60000).toISOString(),
+      });
+    }
+
+    return recommendations;
+  }
+
+  /**
+   * Get current live metrics
+   */
+  getLiveMetrics(): LiveMetricState | null {
+    return this.liveMetrics;
+  }
+
+  /**
+   * Get recommendations filtered by current field state
+   */
+  getFieldStateAwareRecommendations(): AIRecommendation[] {
+    const base = this.getRecommendations();
+    if (!this.liveMetrics) return base;
+
+    // Prioritize based on field state
+    const { fieldState } = this.liveMetrics;
+
+    return base.sort((a, b) => {
+      // In fragmented state, prioritize friction_reduction
+      if (fieldState === 'fragmented') {
+        if (a.type === 'friction_reduction' && b.type !== 'friction_reduction') return -1;
+        if (b.type === 'friction_reduction' && a.type !== 'friction_reduction') return 1;
+      }
+
+      // In coherent state, prioritize goal_alignment
+      if (fieldState === 'coherent') {
+        if (a.type === 'goal_alignment' && b.type !== 'goal_alignment') return -1;
+        if (b.type === 'goal_alignment' && a.type !== 'goal_alignment') return 1;
+      }
+
+      // Default: by priority
+      const priorityOrder = { critical: 4, high: 3, medium: 2, low: 1 };
+      return priorityOrder[b.priority] - priorityOrder[a.priority];
+    });
   }
 
   private notifyListeners(): void {

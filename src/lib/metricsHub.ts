@@ -15,6 +15,7 @@
 import type { DeltaHVState, CheckIn, JournalEntry, RhythmProfile } from './deltaHVEngine';
 import { DeltaHVEngine } from './deltaHVEngine';
 import { storyShuffleEngine } from './storyShuffleEngine';
+import { userProfileService } from './userProfile';
 
 // ============================================================================
 // Types
@@ -502,6 +503,54 @@ class MetricsHub {
     });
 
     this.saveHistory();
+
+    // Record to user profile for long-term tracking
+    // Only save significant updates (not every micro-update)
+    if (this.updateCount % 5 === 0 || trigger === 'action' || trigger === 'habit') {
+      this.syncToUserProfile();
+    }
+  }
+
+  /**
+   * Sync current metrics to user profile for historical tracking
+   */
+  private async syncToUserProfile(): Promise<void> {
+    if (!this.currentState) return;
+
+    try {
+      // Get today's check-ins to count completed beats
+      const today = new Date().toISOString().split('T')[0];
+      const todayCheckIns = this.checkIns.filter(c => c.slot.startsWith(today));
+      const completedBeats = todayCheckIns.filter(c => c.done).length;
+      const totalBeats = todayCheckIns.length;
+
+      // Get today's journal entries
+      const todayJournals = this.journals[today] || [];
+
+      // Extract glyphs from journals
+      const glyphPattern = /[\u{1F300}-\u{1F9FF}]/gu;
+      const glyphsUsed: string[] = [];
+      todayJournals.forEach(entry => {
+        const matches = entry.content.match(glyphPattern);
+        if (matches) glyphsUsed.push(...matches);
+      });
+
+      await userProfileService.recordMetricsSnapshot({
+        deltaHV: this.currentState.deltaHV,
+        rhythmScore: this.currentState.resonanceCoupling,
+        frictionCoefficient: this.currentState.frictionCoefficient,
+        symbolicDensity: this.currentState.symbolicDensity,
+        resonanceCoupling: this.currentState.resonanceCoupling,
+        harmonicStability: this.currentState.harmonicStability,
+        completedBeats,
+        totalBeats,
+        journalEntries: todayJournals.length,
+        glyphsUsed: [...new Set(glyphsUsed)],
+        fieldState: this.currentState.fieldState,
+      });
+    } catch (error) {
+      console.error('Failed to sync metrics to user profile:', error);
+    }
   }
 
   // ========================================
