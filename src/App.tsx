@@ -4,6 +4,7 @@ import {
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
   CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer
 } from 'lucide-react';
+import { GoogleCalendarService } from './lib/googleCalendar';
 
 // localStorage-only storage implementation
 const storageGet = async (key: string): Promise<string | null> => {
@@ -139,6 +140,11 @@ export default function App() {
   
   const [glyphCanvasOpen, setGlyphCanvasOpen] = useState(false);
 
+  // Google Calendar integration
+  const [gcalService, setGcalService] = useState<GoogleCalendarService | null>(null);
+  const [gcalAuthed, setGcalAuthed] = useState(false);
+  const [syncEnabled, setSyncEnabled] = useState(false);
+
   // Load data with safe storage
   useEffect(() => {
     const load = async () => {
@@ -185,7 +191,68 @@ export default function App() {
     }
   }, [checkIns, journals, rhythmProfile, isLoading]);
 
-  const scheduleBeat = (category: string, task: string, when: Date, note?: string, waveId?: string, isAnchor?: boolean) => {
+  // Initialize Google Calendar
+  useEffect(() => {
+    const initGCal = async () => {
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
+
+      if (!clientId || !apiKey || clientId === 'YOUR_CLIENT_ID_HERE' || apiKey === 'YOUR_API_KEY_HERE') {
+        console.log('Google Calendar API credentials not configured');
+        return;
+      }
+
+      const service = new GoogleCalendarService({
+        apiKey: apiKey,
+        clientId: clientId,
+        calendarId: import.meta.env.VITE_GOOGLE_CALENDAR_ID || 'primary',
+      });
+
+      try {
+        await service.initialize();
+        setGcalService(service);
+      } catch (error) {
+        console.error('Failed to initialize Google Calendar:', error);
+      }
+    };
+
+    initGCal();
+  }, []);
+
+  // Sync to Google Calendar
+  const syncToGoogleCalendar = async (checkIn: CheckIn) => {
+    if (!gcalService || !gcalAuthed || !syncEnabled) return;
+
+    try {
+      const start = new Date(checkIn.slot);
+      const end = new Date(start.getTime() + 30 * 60000); // 30 min default
+
+      await gcalService.createEvent({
+        summary: `${checkIn.category}: ${checkIn.task}`,
+        description: checkIn.note || '',
+        start: start.toISOString(),
+        end: end.toISOString(),
+        colorId: getGoogleCalendarColor(checkIn.waveId),
+      });
+    } catch (error) {
+      console.error('Failed to sync to Google Calendar:', error);
+    }
+  };
+
+  const getGoogleCalendarColor = (waveId?: string): string => {
+    // Google Calendar color IDs
+    const colorMap: Record<string, string> = {
+      'cyan': '7',    // Cyan
+      'purple': '3',  // Purple
+      'blue': '9',    // Blue
+      'orange': '6',  // Orange
+    };
+
+    const color = getWaveColor(waveId);
+    return colorMap[color] || '1';
+  };
+
+  const scheduleBeat = async (category: string, task: string, when: Date, note?: string, waveId?: string, isAnchor?: boolean) => {
     const entry: CheckIn = {
       id: Date.now().toString() + Math.random(),
       category,
@@ -198,6 +265,11 @@ export default function App() {
       isAnchor
     };
     setCheckIns(prev => [entry, ...prev]);
+
+    // Auto-sync to Google Calendar
+    if (syncEnabled && gcalAuthed) {
+      await syncToGoogleCalendar(entry);
+    }
   };
 
   const markDone = (id: string) => {
@@ -385,6 +457,34 @@ export default function App() {
               <Waves className="w-4 h-4" />
               Wave Setup
             </button>
+
+            {/* Google Calendar Integration */}
+            {gcalService && (
+              <>
+                {!gcalAuthed ? (
+                  <button
+                    onClick={async () => {
+                      const authed = await gcalService.authenticate();
+                      setGcalAuthed(authed);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-sm flex items-center gap-2"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Connect Google Calendar
+                  </button>
+                ) : (
+                  <label className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/70 border border-gray-800 text-sm cursor-pointer hover:bg-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={syncEnabled}
+                      onChange={(e) => setSyncEnabled(e.target.checked)}
+                      className="rounded"
+                    />
+                    Sync to Calendar
+                  </label>
+                )}
+              </>
+            )}
           </div>
           <div className="text-sm text-gray-500 h-5">
             {saveStatus === 'saving' && 'Syncing...'}
