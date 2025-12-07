@@ -21,13 +21,17 @@ import type { UserProfile, UserGoals, HabitTrack, UserPreferences } from '../lib
 import { roadmapEngine, calculateFriction, predictEnergyState } from '../lib/roadmapEngine';
 import type { Roadmap, AIRecommendation, EnergyState } from '../lib/roadmapEngine';
 import { LIFE_DOMAINS } from '../lib/glyphSystem';
+import { NeuralMapView } from './NeuralMapView';
+import type { DeltaHVState } from '../lib/deltaHVEngine';
 
 interface UserProfilePageProps {
   onBack: () => void;
   onNavigateToRoadmap?: (category: string) => void;
+  deltaHV?: DeltaHVState;
+  onSelectBeat?: (category: string) => void;
 }
 
-type ProfileTab = 'overview' | 'goals' | 'habits' | 'preferences' | 'roadmap';
+type ProfileTab = 'overview' | 'neural' | 'goals' | 'habits' | 'preferences' | 'roadmap';
 
 const categoryIcons: Record<string, React.ReactNode> = {
   physical: <Zap className="w-4 h-4" />,
@@ -41,6 +45,8 @@ const categoryIcons: Record<string, React.ReactNode> = {
 export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   onBack,
   onNavigateToRoadmap,
+  deltaHV,
+  onSelectBeat,
 }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
@@ -173,7 +179,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
 
         {/* Tab Navigation */}
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          {(['overview', 'goals', 'habits', 'preferences', 'roadmap'] as ProfileTab[]).map(tab => (
+          {(['overview', 'neural', 'goals', 'habits', 'preferences', 'roadmap'] as ProfileTab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -197,6 +203,24 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
             onDismissRecommendation={handleDismissRecommendation}
             onNavigateToRoadmap={onNavigateToRoadmap}
           />
+        )}
+
+        {activeTab === 'neural' && deltaHV && (
+          <NeuralMapView
+            deltaHV={deltaHV}
+            onSelectBeat={onSelectBeat}
+          />
+        )}
+
+        {activeTab === 'neural' && !deltaHV && (
+          <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-xl p-8 text-center">
+            <Brain className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-white mb-2">Neural Map Loading</h3>
+            <p className="text-gray-400">
+              Start tracking your daily beats to generate your personalized neural map based on
+              DeltaHV metrics and Free Energy Principle analysis.
+            </p>
+          </div>
         )}
 
         {activeTab === 'goals' && (

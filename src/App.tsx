@@ -872,6 +872,13 @@ export default function App() {
           setCurrentRoadmapDomain(domain);
           setCurrentView('roadmap');
         }}
+        deltaHV={deltaHVState || undefined}
+        onSelectBeat={(category) => {
+          setMiniCategory(category);
+          setMiniTime(toTimeInput(addMinutes(new Date(), 30)));
+          setMiniOpen(true);
+          setCurrentView('dashboard');
+        }}
       />
     );
   }
