@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  User,
   Target,
   Zap,
   Heart,
@@ -13,39 +12,15 @@ import {
   Plus,
   X,
   Check,
-  ChevronDown,
   ChevronRight,
-  Edit3,
   TrendingUp,
-  Calendar,
-  Clock,
-  Star,
   Flame,
-  Award,
 } from 'lucide-react';
-import {
-  userProfileService,
-  UserProfile,
-  UserGoals,
-  HabitTrack,
-  UserPreferences,
-  MetricsSnapshot,
-} from '../lib/userProfile';
-import {
-  roadmapEngine,
-  Roadmap,
-  AIRecommendation,
-  EnergyState,
-  calculateFriction,
-  predictEnergyState,
-} from '../lib/roadmapEngine';
-import {
-  glyphSystem,
-  CORE_GLYPHS,
-  PHASE_DESCRIPTIONS,
-  LIFE_DOMAINS,
-  WumboPhase,
-} from '../lib/glyphSystem';
+import { userProfileService } from '../lib/userProfile';
+import type { UserProfile, UserGoals, HabitTrack, UserPreferences } from '../lib/userProfile';
+import { roadmapEngine, calculateFriction, predictEnergyState } from '../lib/roadmapEngine';
+import type { Roadmap, AIRecommendation, EnergyState } from '../lib/roadmapEngine';
+import { LIFE_DOMAINS } from '../lib/glyphSystem';
 
 interface UserProfilePageProps {
   onBack: () => void;
@@ -63,15 +38,6 @@ const categoryIcons: Record<string, React.ReactNode> = {
   creative: <Palette className="w-4 h-4" />,
 };
 
-const categoryColors: Record<string, string> = {
-  physical: 'cyan',
-  emotional: 'pink',
-  mental: 'purple',
-  spiritual: 'yellow',
-  social: 'green',
-  creative: 'orange',
-};
-
 export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   onBack,
   onNavigateToRoadmap,
@@ -82,8 +48,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   const [recommendations, setRecommendations] = useState<AIRecommendation[]>([]);
   const [energyState, setEnergyState] = useState<EnergyState | null>(null);
   const [friction, setFriction] = useState<{ total: number; breakdown: Record<string, number> } | null>(null);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['needs', 'goals']));
-
   // Modal states
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [showHabitModal, setShowHabitModal] = useState(false);
@@ -113,23 +77,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       console.error('Failed to initialize profile:', error);
     }
     setLoading(false);
-  };
-
-  const toggleSection = (section: string) => {
-    setExpandedSections(prev => {
-      const next = new Set(prev);
-      if (next.has(section)) {
-        next.delete(section);
-      } else {
-        next.add(section);
-      }
-      return next;
-    });
-  };
-
-  const handleUpdateProfile = async (updates: Partial<UserProfile>) => {
-    const updated = await userProfileService.updateProfile(updates);
-    setProfile(updated);
   };
 
   const handleDismissRecommendation = async (id: string) => {
@@ -244,14 +191,11 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
         {/* Tab Content */}
         {activeTab === 'overview' && (
           <OverviewTab
-            profile={profile}
             recommendations={recommendations}
             energyState={energyState}
             friction={friction}
             onDismissRecommendation={handleDismissRecommendation}
             onNavigateToRoadmap={onNavigateToRoadmap}
-            expandedSections={expandedSections}
-            toggleSection={toggleSection}
           />
         )}
 
@@ -260,7 +204,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
             profile={profile}
             onAddGoal={() => setShowGoalModal(true)}
             onEditGoal={setEditingGoal}
-            onUpdateProfile={handleUpdateProfile}
           />
         )}
 
@@ -338,25 +281,19 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
 // ============================================================================
 
 interface OverviewTabProps {
-  profile: UserProfile;
   recommendations: AIRecommendation[];
   energyState: EnergyState | null;
   friction: { total: number; breakdown: Record<string, number> } | null;
   onDismissRecommendation: (id: string) => void;
   onNavigateToRoadmap?: (category: string) => void;
-  expandedSections: Set<string>;
-  toggleSection: (section: string) => void;
 }
 
 const OverviewTab: React.FC<OverviewTabProps> = ({
-  profile,
   recommendations,
   energyState,
   friction,
   onDismissRecommendation,
   onNavigateToRoadmap,
-  expandedSections,
-  toggleSection,
 }) => {
   return (
     <div className="space-y-6">
@@ -535,10 +472,9 @@ interface GoalsTabProps {
   profile: UserProfile;
   onAddGoal: () => void;
   onEditGoal: (goal: UserGoals) => void;
-  onUpdateProfile: (updates: Partial<UserProfile>) => void;
 }
 
-const GoalsTab: React.FC<GoalsTabProps> = ({ profile, onAddGoal, onEditGoal, onUpdateProfile }) => {
+const GoalsTab: React.FC<GoalsTabProps> = ({ profile, onAddGoal, onEditGoal }) => {
   const groupedGoals = profile.goals.reduce((acc, goal) => {
     if (!acc[goal.category]) acc[goal.category] = [];
     acc[goal.category].push(goal);
@@ -1091,7 +1027,7 @@ const HabitModal: React.FC<HabitModalProps> = ({ onClose, onSave }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('General');
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'custom'>('daily');
-  const [targetCount, setTargetCount] = useState(1);
+  const [targetCount] = useState(1);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">

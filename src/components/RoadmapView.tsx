@@ -4,9 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Check,
-  Circle,
   Play,
-  Pause,
   SkipForward,
   RefreshCw,
   Sparkles,
@@ -16,27 +14,13 @@ import {
   AlertTriangle,
   Edit3,
   Save,
-  X,
 } from 'lucide-react';
-import {
-  userProfileService,
-  UserProfile,
-  BeatRoadmapConfig,
-  RoadmapQuestion,
-} from '../lib/userProfile';
-import {
-  roadmapEngine,
-  Roadmap,
-  RoadmapStep,
-  FrictionSource,
-} from '../lib/roadmapEngine';
-import {
-  glyphSystem,
-  LIFE_DOMAINS,
-  PHASE_DESCRIPTIONS,
-  Glyph,
-  WumboPhase,
-} from '../lib/glyphSystem';
+import { userProfileService } from '../lib/userProfile';
+import type { UserProfile } from '../lib/userProfile';
+import { roadmapEngine } from '../lib/roadmapEngine';
+import type { Roadmap, RoadmapStep } from '../lib/roadmapEngine';
+import { glyphSystem, LIFE_DOMAINS, PHASE_DESCRIPTIONS } from '../lib/glyphSystem';
+import type { WumboPhase, Glyph } from '../lib/glyphSystem';
 
 interface RoadmapViewProps {
   domainId: string;
@@ -51,7 +35,7 @@ export const RoadmapView: React.FC<RoadmapViewProps> = ({
 }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [roadmap, setRoadmap] = useState<Roadmap | null>(null);
-  const [domain, setDomain] = useState(LIFE_DOMAINS.find(d => d.id === domainId));
+  const domain = LIFE_DOMAINS.find(d => d.id === domainId);
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
   const [editingQuestions, setEditingQuestions] = useState(false);
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({});
@@ -72,7 +56,6 @@ export const RoadmapView: React.FC<RoadmapViewProps> = ({
     setRoadmap(loadedRoadmap || null);
 
     // Load beat roadmap questions for this domain
-    const beatCategory = domain?.practices[0]?.split(' ')[0] || 'General';
     const beatRoadmap = loadedProfile.beatRoadmaps.find(br =>
       getCategoriesForDomain(domainId).includes(br.category)
     );
@@ -171,10 +154,6 @@ export const RoadmapView: React.FC<RoadmapViewProps> = ({
   const phases = domain.phases.map(phase =>
     PHASE_DESCRIPTIONS.find(p => p.phase === phase)
   ).filter(Boolean);
-
-  const beatRoadmapQuestions = profile?.beatRoadmaps
-    .filter(br => getCategoriesForDomain(domainId).includes(br.category))
-    .flatMap(br => br.questions) || [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-blue-950 pb-20">

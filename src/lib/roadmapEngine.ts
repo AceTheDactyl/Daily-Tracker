@@ -12,12 +12,11 @@
  * - Roadmap = action sequences that systematically reduce friction
  */
 
-import {
+import type {
   UserProfile,
   UserGoals,
   BeatRoadmapConfig,
   MetricsSnapshot,
-  HabitTrack,
 } from './userProfile';
 
 // ============================================================================
@@ -308,7 +307,6 @@ function detectPatterns(metrics: MetricsSnapshot[]): PatternInsight | null {
   if (metrics.length < 7) return null;
 
   const recent = metrics.slice(-7);
-  const avgDeltaHV = recent.reduce((sum, m) => sum + m.deltaHV, 0) / recent.length;
 
   // Detect improvement trend
   const firstHalf = recent.slice(0, 3);
@@ -472,7 +470,6 @@ function generateStepsFromFriction(
   category: string
 ): RoadmapStep[] {
   const steps: RoadmapStep[] = [];
-  const now = new Date().toISOString();
 
   // Foundation step: establish baseline
   steps.push({
@@ -514,7 +511,7 @@ function generateStepsFromFriction(
   });
 
   // Goal milestone steps
-  goals.forEach((goal, gIdx) => {
+  goals.forEach((goal) => {
     goal.milestones.filter(m => !m.completed).slice(0, 2).forEach((milestone, mIdx) => {
       steps.push({
         id: `step-${category}-goal-${goal.id}-${milestone.id}`,

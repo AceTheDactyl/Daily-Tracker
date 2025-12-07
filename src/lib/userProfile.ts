@@ -186,7 +186,6 @@ export const DEFAULT_BEAT_QUESTIONS: Record<string, RoadmapQuestion[]> = {
 // ============================================================================
 
 const STORAGE_KEY = 'pulse-user-profile';
-const METRICS_HISTORY_KEY = 'pulse-metrics-history';
 
 // ============================================================================
 // Default Profile
