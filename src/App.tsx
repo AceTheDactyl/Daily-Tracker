@@ -408,7 +408,7 @@ export default function App() {
     }
   }, [checkIns, journals, rhythmProfile, selectedDate, isLoading]);
 
-  // Initialize Google Calendar
+  // Initialize Google Calendar with persistent auth
   useEffect(() => {
     const initGCal = async () => {
       const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -425,9 +425,24 @@ export default function App() {
         calendarId: import.meta.env.VITE_GOOGLE_CALENDAR_ID || 'primary',
       });
 
+      // Set up auth state change callback
+      service.setAuthChangeCallback((isAuthenticated) => {
+        setGcalAuthed(isAuthenticated);
+        if (isAuthenticated) {
+          setSyncEnabled(true);
+        }
+      });
+
       try {
         await service.initialize();
         setGcalService(service);
+
+        // Check if token was restored during initialize
+        if (service.isAuthenticated()) {
+          setGcalAuthed(true);
+          setSyncEnabled(true);
+          console.log('Google Calendar: Auto-authenticated from stored token');
+        }
       } catch (error) {
         console.error('Failed to initialize Google Calendar:', error);
       }

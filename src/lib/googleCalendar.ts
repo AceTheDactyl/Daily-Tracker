@@ -1,11 +1,19 @@
 // Google Calendar API Configuration
 const SCOPES = 'https://www.googleapis.com/auth/calendar.events';
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest';
+const TOKEN_STORAGE_KEY = 'pulse-gcal-token';
 
 interface GoogleCalendarConfig {
   apiKey: string;
   clientId: string;
   calendarId: string;
+}
+
+interface StoredToken {
+  access_token: string;
+  expires_at: number;
+  token_type: string;
+  scope: string;
 }
 
 declare global {
@@ -18,15 +26,26 @@ declare global {
 export class GoogleCalendarService {
   private tokenClient: any;
   private config: GoogleCalendarConfig;
+  private onAuthChange?: (isAuthenticated: boolean) => void;
 
   constructor(config: GoogleCalendarConfig) {
     this.config = config;
+  }
+
+  /**
+   * Set callback for auth state changes
+   */
+  setAuthChangeCallback(callback: (isAuthenticated: boolean) => void) {
+    this.onAuthChange = callback;
   }
 
   async initialize() {
     await this.loadGoogleScripts();
     await this.initializeGapi();
     this.initializeGis();
+
+    // Try to restore saved token
+    await this.restoreToken();
   }
 
   private loadGoogleScripts(): Promise<void> {
@@ -77,13 +96,97 @@ export class GoogleCalendarService {
     });
   }
 
+  /**
+   * Save token to localStorage
+   */
+  private saveToken(token: any) {
+    try {
+      const storedToken: StoredToken = {
+        access_token: token.access_token,
+        expires_at: Date.now() + (token.expires_in * 1000),
+        token_type: token.token_type,
+        scope: token.scope
+      };
+      localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(storedToken));
+      console.log('Google Calendar token saved');
+    } catch (e) {
+      console.error('Failed to save token:', e);
+    }
+  }
+
+  /**
+   * Restore token from localStorage
+   */
+  private async restoreToken(): Promise<boolean> {
+    try {
+      const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+      if (!stored) return false;
+
+      const token: StoredToken = JSON.parse(stored);
+
+      // Check if token is expired (with 5 min buffer)
+      if (token.expires_at < Date.now() + 300000) {
+        console.log('Stored token expired, clearing');
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        return false;
+      }
+
+      // Restore token to gapi client
+      window.gapi.client.setToken({
+        access_token: token.access_token,
+        token_type: token.token_type,
+        scope: token.scope,
+        expires_in: Math.floor((token.expires_at - Date.now()) / 1000)
+      });
+
+      console.log('Google Calendar token restored from storage');
+      this.onAuthChange?.(true);
+      return true;
+    } catch (e) {
+      console.error('Failed to restore token:', e);
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      return false;
+    }
+  }
+
+  /**
+   * Check if currently authenticated
+   */
+  isAuthenticated(): boolean {
+    const token = window.gapi?.client?.getToken();
+    return token !== null && token !== undefined;
+  }
+
+  /**
+   * Check if there's a stored token that might be valid
+   */
+  hasStoredToken(): boolean {
+    try {
+      const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+      if (!stored) return false;
+      const token: StoredToken = JSON.parse(stored);
+      return token.expires_at > Date.now() + 300000;
+    } catch {
+      return false;
+    }
+  }
+
   async authenticate(): Promise<boolean> {
     return new Promise((resolve) => {
       this.tokenClient.callback = async (resp: any) => {
         if (resp.error !== undefined) {
+          this.onAuthChange?.(false);
           resolve(false);
           return;
         }
+
+        // Save the token for persistence
+        const token = window.gapi.client.getToken();
+        if (token) {
+          this.saveToken(token);
+        }
+
+        this.onAuthChange?.(true);
         resolve(true);
       };
 
@@ -93,6 +196,20 @@ export class GoogleCalendarService {
         this.tokenClient.requestAccessToken({ prompt: '' });
       }
     });
+  }
+
+  /**
+   * Sign out and clear stored token
+   */
+  signOut() {
+    const token = window.gapi.client.getToken();
+    if (token) {
+      window.google.accounts.oauth2.revoke(token.access_token);
+      window.gapi.client.setToken(null);
+    }
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    this.onAuthChange?.(false);
+    console.log('Signed out of Google Calendar');
   }
 
   async createEvent(event: {
