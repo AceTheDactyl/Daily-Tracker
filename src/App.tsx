@@ -687,6 +687,9 @@ export default function App() {
     if (checkIn) {
       // Log completion to audit trail
       logCheckInCompleted(checkIn.category, checkIn.task, checkIn.slot, new Date().toISOString());
+
+      // Record action to metricsHub for real-time metric updates
+      metricsHub.recordAction(`completed: ${checkIn.category} - ${checkIn.task}`);
     }
     setCheckIns(prev => prev.map(c => c.id === id ? { ...c, done: true, loggedAt: new Date().toISOString() } : c));
   };
