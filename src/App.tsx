@@ -2130,6 +2130,41 @@ function WaveSetupWizard({ profile, onClose, onSave }: any) {
   const [deviationDay, setDeviationDay] = useState(profile.deviationDay ?? 6);
   const [wakeTime, setWakeTime] = useState(profile.wakeTime ?? { hours: 8, minutes: 0 });
 
+  // Enhanced wave settings for each wave
+  const [waveSettings, setWaveSettings] = useState<Record<string, {
+    activities: string[];
+    moodPreset: string;
+    metricFocus: 'symbolic' | 'resonance' | 'friction' | 'stability';
+  }>>(() => {
+    const settings: Record<string, any> = {};
+    profile.waves.forEach((w: Wave) => {
+      settings[w.id] = {
+        activities: [],
+        moodPreset: w.id === 'focus' ? 'focus' : w.id === 'flow' ? 'energize' : 'calm',
+        metricFocus: w.id === 'focus' ? 'symbolic' : w.id === 'flow' ? 'resonance' : 'stability',
+      };
+    });
+    return settings;
+  });
+
+  // Get current metrics for recommendations
+  const currentMetrics = metricsHub.getState();
+
+  // Activity suggestions per wave type
+  const waveActivitySuggestions: Record<string, string[]> = {
+    focus: ['Deep work sessions', 'Analysis tasks', 'Strategic planning', 'Learning new skills', 'Important meetings', 'Problem solving'],
+    flow: ['Creative projects', 'Brainstorming', 'Social calls', 'Collaboration', 'Exercise', 'Music practice'],
+    recovery: ['Journaling', 'Meditation', 'Light reading', 'Meal prep', 'Family time', 'Gentle stretching'],
+  };
+
+  // Metric focus recommendations
+  const metricDescriptions = {
+    symbolic: { name: 'Symbolic (S)', desc: 'Meaning & intention - best for journaling, goal-setting, creative visualization', color: 'purple' },
+    resonance: { name: 'Resonance (R)', desc: 'Rhythm alignment - best for social connection, team work, collaborative tasks', color: 'cyan' },
+    friction: { name: 'Friction (δφ)', desc: 'Reduce resistance - best for tackling obstacles, clearing backlogs, decisive action', color: 'amber' },
+    stability: { name: 'Stability (H)', desc: 'Harmonic balance - best for routines, anchor activities, recovery work', color: 'emerald' },
+  };
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="w-full max-w-2xl bg-gray-950 border-2 border-purple-700 rounded-2xl p-6 space-y-6 max-h-[90vh] overflow-y-auto">
@@ -2137,9 +2172,42 @@ function WaveSetupWizard({ profile, onClose, onSave }: any) {
           <Waves className="w-8 h-8" /> Wave Setup Wizard
         </h2>
 
+        {/* Progress indicator */}
+        <div className="flex gap-2">
+          {[0, 1, 2, 3, 4].map(s => (
+            <div key={s} className={`flex-1 h-1 rounded-full ${step >= s ? 'bg-purple-500' : 'bg-gray-800'}`} />
+          ))}
+        </div>
+
         {step === 0 && (
           <div className="space-y-4">
             <p className="text-gray-300">Your brain flows through three biological waves each day. Let's map YOUR personal rhythm.</p>
+
+            {/* Show current metrics if available */}
+            {currentMetrics && (
+              <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+                <p className="text-sm text-gray-400 mb-2">Your current DeltaHV state:</p>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div>
+                    <p className="text-purple-400 text-lg font-bold">{currentMetrics.symbolicDensity}</p>
+                    <p className="text-[10px] text-gray-500">Symbolic</p>
+                  </div>
+                  <div>
+                    <p className="text-cyan-400 text-lg font-bold">{currentMetrics.resonanceCoupling}</p>
+                    <p className="text-[10px] text-gray-500">Resonance</p>
+                  </div>
+                  <div>
+                    <p className="text-amber-400 text-lg font-bold">{currentMetrics.frictionCoefficient}</p>
+                    <p className="text-[10px] text-gray-500">Friction</p>
+                  </div>
+                  <div>
+                    <p className="text-emerald-400 text-lg font-bold">{currentMetrics.harmonicStability}</p>
+                    <p className="text-[10px] text-gray-500">Stability</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="bg-purple-900/20 border border-purple-700/50 rounded-xl p-4 space-y-3">
               <p className="text-sm text-purple-300">Answer these questions to find your rhythm:</p>
               <ul className="text-sm text-gray-300 space-y-2 list-disc list-inside">
@@ -2249,12 +2317,122 @@ function WaveSetupWizard({ profile, onClose, onSave }: any) {
               </div>
             ))}
             <button onClick={() => setStep(3)} className="w-full px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium">
-              Next: Deviation Day
+              Next: Wave Activities & Metrics
             </button>
           </div>
         )}
 
         {step === 3 && (
+          <div className="space-y-4">
+            <p className="text-gray-300">Configure activities and metric focus for each wave:</p>
+
+            {waves.map((wave: Wave) => {
+              const colors = waveColorClasses[wave.color];
+              const settings = waveSettings[wave.id] || { activities: [], moodPreset: 'balance', metricFocus: 'symbolic' };
+              const suggestions = waveActivitySuggestions[wave.id] || waveActivitySuggestions.focus;
+
+              return (
+                <div key={wave.id} className={`border-2 ${colors.border} ${colors.bgLight} rounded-xl p-4 space-y-3`}>
+                  <p className={`${colors.text} font-medium flex items-center gap-2`}>
+                    <Waves className="w-4 h-4" />
+                    {wave.name}
+                  </p>
+
+                  {/* Metric Focus */}
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Metric Focus for this wave:</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(Object.entries(metricDescriptions) as [string, {name: string; desc: string; color: string}][]).map(([key, info]) => (
+                        <button
+                          key={key}
+                          onClick={() => setWaveSettings({
+                            ...waveSettings,
+                            [wave.id]: { ...settings, metricFocus: key as any }
+                          })}
+                          className={`p-2 rounded-lg border text-left text-xs ${
+                            settings.metricFocus === key
+                              ? `bg-${info.color}-600/30 border-${info.color}-500 text-${info.color}-300`
+                              : 'bg-gray-900/50 border-gray-700 text-gray-400'
+                          }`}
+                        >
+                          <p className="font-medium">{info.name}</p>
+                          <p className="text-[10px] opacity-70">{info.desc.split(' - ')[0]}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Music Mood */}
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Preferred music mood:</label>
+                    <div className="flex flex-wrap gap-2">
+                      {['focus', 'energize', 'calm', 'boost', 'heal'].map(mood => (
+                        <button
+                          key={mood}
+                          onClick={() => setWaveSettings({
+                            ...waveSettings,
+                            [wave.id]: { ...settings, moodPreset: mood }
+                          })}
+                          className={`px-2 py-1 rounded-lg text-xs ${
+                            settings.moodPreset === mood
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-800 text-gray-400'
+                          }`}
+                        >
+                          {mood === 'focus' ? '🎯' : mood === 'energize' ? '⚡' : mood === 'calm' ? '🌊' : mood === 'boost' ? '🚀' : '💜'} {mood}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Activity Suggestions */}
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Suggested activities (tap to add):</label>
+                    <div className="flex flex-wrap gap-1">
+                      {suggestions.map(activity => (
+                        <button
+                          key={activity}
+                          onClick={() => {
+                            const current = settings.activities || [];
+                            if (current.includes(activity)) {
+                              setWaveSettings({
+                                ...waveSettings,
+                                [wave.id]: { ...settings, activities: current.filter(a => a !== activity) }
+                              });
+                            } else {
+                              setWaveSettings({
+                                ...waveSettings,
+                                [wave.id]: { ...settings, activities: [...current, activity] }
+                              });
+                            }
+                          }}
+                          className={`px-2 py-0.5 rounded text-[10px] ${
+                            settings.activities?.includes(activity)
+                              ? 'bg-emerald-600/50 text-emerald-300'
+                              : 'bg-gray-800/50 text-gray-500'
+                          }`}
+                        >
+                          {activity}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className="flex gap-3">
+              <button onClick={() => setStep(2)} className="flex-1 px-6 py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-white">
+                Back
+              </button>
+              <button onClick={() => setStep(4)} className="flex-1 px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium">
+                Next: Deviation Day
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 4 && (
           <div className="space-y-4">
             <p className="text-gray-300">Pick your weekly Deviation Day (planned chaos = better discipline):</p>
             <div className="grid grid-cols-7 gap-2">
@@ -2269,16 +2447,40 @@ function WaveSetupWizard({ profile, onClose, onSave }: any) {
               ))}
             </div>
             <p className="text-xs text-gray-400 italic">On deviation days, the UI changes to orange and removes guilt from missing anchors</p>
+
+            {/* Summary */}
+            <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 space-y-2">
+              <p className="text-sm font-medium text-gray-300">Setup Summary:</p>
+              <div className="text-xs text-gray-400 space-y-1">
+                <p>⏰ Wake time: {String(wakeTime.hours).padStart(2, '0')}:{String(wakeTime.minutes).padStart(2, '0')}</p>
+                <p>🌊 {waves.length} waves configured</p>
+                <p>🎲 Deviation day: {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][deviationDay]}</p>
+              </div>
+              {waves.map((w: Wave) => (
+                <div key={w.id} className="text-xs text-gray-500">
+                  • {w.name}: {waveSettings[w.id]?.metricFocus || 'symbolic'} focus, {waveSettings[w.id]?.moodPreset || 'balance'} music
+                </div>
+              ))}
+            </div>
+
             <div className="flex gap-3">
-              <button onClick={() => setStep(2)} className="flex-1 px-6 py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-white">
+              <button onClick={() => setStep(3)} className="flex-1 px-6 py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-white">
                 Back
               </button>
               <button
                 onClick={() => {
+                  // Enhance waves with settings
+                  const enhancedWaves = waves.map((w: Wave) => ({
+                    ...w,
+                    metricFocus: waveSettings[w.id]?.metricFocus,
+                    moodPreset: waveSettings[w.id]?.moodPreset,
+                    activities: waveSettings[w.id]?.activities,
+                  }));
                   onSave({
-                    waves,
+                    waves: enhancedWaves,
                     deviationDay,
                     wakeTime,
+                    waveSettings,
                     setupComplete: true
                   });
                 }}
