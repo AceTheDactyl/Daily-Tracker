@@ -14,7 +14,6 @@ import {
   TrendingUp,
   Calendar,
   ListTodo,
-  Heart,
   Zap,
 } from 'lucide-react';
 import type { DeltaHVState, JournalEntry } from '../lib/deltaHVEngine';
@@ -560,12 +559,8 @@ export const NeuralMapView: React.FC<NeuralMapViewProps> = ({
                         <div className="text-sm text-white">{formatDate(date)}</div>
                         <div className="text-xs text-gray-500 truncate">{entry.content.slice(0, 50)}...</div>
                       </div>
-                      {entry.glyphs && entry.glyphs.length > 0 && (
-                        <div className="flex gap-1">
-                          {entry.glyphs.slice(0, 3).map((g, i) => (
-                            <span key={i} className="text-sm">{g}</span>
-                          ))}
-                        </div>
+                      {entry.waveId && (
+                        <span className="text-xs text-purple-400/60">Wave linked</span>
                       )}
                       <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${
                         expandedJournal === entry.id ? 'rotate-180' : ''
@@ -574,10 +569,10 @@ export const NeuralMapView: React.FC<NeuralMapViewProps> = ({
                     {expandedJournal === entry.id && (
                       <div className="px-3 pb-3 pt-0 border-t border-gray-800">
                         <p className="text-sm text-gray-300 whitespace-pre-wrap mt-2">{entry.content}</p>
-                        {entry.mood && (
+                        {entry.waveId && (
                           <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
-                            <Heart className="w-3 h-3" />
-                            <span>Mood: {entry.mood}</span>
+                            <Calendar className="w-3 h-3" />
+                            <span>Linked to wave session</span>
                           </div>
                         )}
                       </div>

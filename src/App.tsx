@@ -404,6 +404,9 @@ export default function App() {
       metricsHub.updateJournals(journals);
       metricsHub.updateRhythmProfile(rhythmProfile);
 
+      // Update enhanced metrics state from metricsHub
+      setEnhancedMetrics(metricsHub.getState());
+
       // Log ΔHV calculation to audit trail
       if (newDeltaHVState) {
         logDeltaHVCalculated(
