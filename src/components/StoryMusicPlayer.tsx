@@ -183,6 +183,37 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
     }
   }, [deltaHV?.fieldState, tracks.length, isShuffled]);
 
+  // Play track - musicLibrary handles stopping any current playback
+  // MUST be defined before effects that use it
+  const playTrack = useCallback(async (track: MusicTrack) => {
+    // Record skip for previous track if it was playing
+    const wasPlaying = musicLibrary.isCurrentlyPlaying();
+    if (currentTrack && wasPlaying) {
+      const listenedTime = (Date.now() - playStartTime) / 1000;
+      storyShuffleEngine.recordPlayEvent(
+        currentTrack,
+        listenedTime,
+        true, // was skipped
+        deltaHV,
+        'manual'
+      );
+    }
+
+    // musicLibrary.playTrack will stop any current playback first
+    const session = await musicLibrary.playTrack(
+      track.id,
+      track.categoryId,
+      undefined,
+      undefined
+    );
+
+    if (session) {
+      setCurrentTrack(track);
+      setPlayStartTime(Date.now());
+      // Note: isPlaying will be set by the playback subscription
+    }
+  }, [currentTrack, playStartTime, deltaHV]);
+
   // Auto-play next track when current track ends
   useEffect(() => {
     if (!wasPlayingBeforeEnd || !currentTrack) return;
@@ -224,36 +255,6 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
     }
     // If repeatMode === 'off' and no more tracks, just stop (do nothing)
   }, [wasPlayingBeforeEnd, currentTrack, repeatMode, tracks, shuffleQueue, deltaHV, playStartTime, playTrack]);
-
-  // Play track - musicLibrary handles stopping any current playback
-  const playTrack = useCallback(async (track: MusicTrack) => {
-    // Record skip for previous track if it was playing
-    const wasPlaying = musicLibrary.isCurrentlyPlaying();
-    if (currentTrack && wasPlaying) {
-      const listenedTime = (Date.now() - playStartTime) / 1000;
-      storyShuffleEngine.recordPlayEvent(
-        currentTrack,
-        listenedTime,
-        true, // was skipped
-        deltaHV,
-        'manual'
-      );
-    }
-
-    // musicLibrary.playTrack will stop any current playback first
-    const session = await musicLibrary.playTrack(
-      track.id,
-      track.categoryId,
-      undefined,
-      undefined
-    );
-
-    if (session) {
-      setCurrentTrack(track);
-      setPlayStartTime(Date.now());
-      // Note: isPlaying will be set by the playback subscription
-    }
-  }, [currentTrack, playStartTime, deltaHV]);
 
   // Skip forward (empowerment action)
   const handleSkip = useCallback(async () => {
