@@ -1,27 +1,41 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
-  CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer
+  CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Moon, Copy, Timer
 } from 'lucide-react';
 import { GoogleCalendarService } from './lib/googleCalendar';
 
-// localStorage-only storage implementation
+// Storage safety shim
+declare global {
+  interface Window {
+    storage?: {
+      get: (k: string) => Promise<{ value: string } | null>;
+      set: (k: string, v: string) => Promise<void>;
+    };
+  }
+}
+
 const storageGet = async (key: string): Promise<string | null> => {
   try {
+    if (window.storage && typeof window.storage.get === 'function') {
+      const res = await window.storage.get(key);
+      return res?.value ?? null;
+    }
     return localStorage.getItem(key);
-  } catch (error) {
-    console.error('Storage get error:', error);
+  } catch {
     return null;
   }
 };
 
 const storageSet = async (key: string, value: string) => {
   try {
-    localStorage.setItem(key, value);
-  } catch (error) {
-    console.error('Storage set error:', error);
-  }
+    if (window.storage && typeof window.storage.set === 'function') {
+      await window.storage.set(key, value);
+    } else {
+      localStorage.setItem(key, value);
+    }
+  } catch {}
 };
 
 // Wave color class mapping for Tailwind safety
