@@ -60,6 +60,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [showHabitModal, setShowHabitModal] = useState(false);
   const [editingGoal, setEditingGoal] = useState<UserGoals | null>(null);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
 
   useEffect(() => {
     initializeProfile();
@@ -122,7 +123,10 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
               <span>Back</span>
             </button>
             <h1 className="text-xl font-light text-white">Profile</h1>
-            <button className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors">
+            <button
+              onClick={() => setShowSettingsPanel(true)}
+              className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
+            >
               <Settings className="w-5 h-5" />
             </button>
           </div>
@@ -320,6 +324,228 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
             setShowHabitModal(false);
           }}
         />
+      )}
+
+      {/* Settings Panel */}
+      {showSettingsPanel && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm">
+          <div className="h-full w-full max-w-lg ml-auto bg-gray-950 border-l border-gray-800 overflow-y-auto">
+            {/* Settings Header */}
+            <div className="sticky top-0 bg-gray-950/95 backdrop-blur border-b border-gray-800 p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-light text-white flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-cyan-400" />
+                  Settings
+                </h2>
+                <button
+                  onClick={() => setShowSettingsPanel(false)}
+                  className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-6">
+              {/* Profile Settings */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Profile</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm text-gray-400 block mb-2">Display Name</label>
+                    <input
+                      type="text"
+                      value={profile.displayName}
+                      onChange={async (e) => {
+                        await userProfileService.updateProfile({ displayName: e.target.value });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:border-purple-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-400 block mb-2">Avatar Glyph</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {['🌀', '✨', '🔮', '🌟', '💫', '🦋', '🌊', '⚡', '🔥', '🌈', '🌙', '☀️'].map(glyph => (
+                        <button
+                          key={glyph}
+                          onClick={async () => {
+                            await userProfileService.updateProfile({ avatarGlyph: glyph });
+                            setProfile(userProfileService.getProfile()!);
+                          }}
+                          className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-all ${
+                            profile.avatarGlyph === glyph
+                              ? 'bg-purple-600/30 border-2 border-purple-400'
+                              : 'bg-gray-800 border border-gray-700 hover:border-gray-600'
+                          }`}
+                        >
+                          {glyph}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Display Preferences */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Display</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-white">Dark Theme</span>
+                      <p className="text-xs text-gray-500">Use dark mode interface</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const newTheme = profile.preferences.theme === 'dark' ? 'light' : 'dark';
+                        await userProfileService.updatePreferences({ theme: newTheme });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`w-12 h-6 rounded-full transition-colors ${
+                        profile.preferences.theme === 'dark' ? 'bg-purple-600' : 'bg-gray-600'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full bg-white transform transition-transform ${
+                        profile.preferences.theme === 'dark' ? 'translate-x-6' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-white">Show Glyphs</span>
+                      <p className="text-xs text-gray-500">Display symbolic glyphs in UI</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ showGlyphs: !profile.preferences.showGlyphs });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`w-12 h-6 rounded-full transition-colors ${
+                        profile.preferences.showGlyphs ? 'bg-purple-600' : 'bg-gray-600'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full bg-white transform transition-transform ${
+                        profile.preferences.showGlyphs ? 'translate-x-6' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-white">Focus Mode</span>
+                      <p className="text-xs text-gray-500">Minimize distractions</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ focusMode: !profile.preferences.focusMode });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`w-12 h-6 rounded-full transition-colors ${
+                        profile.preferences.focusMode ? 'bg-purple-600' : 'bg-gray-600'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full bg-white transform transition-transform ${
+                        profile.preferences.focusMode ? 'translate-x-6' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Metrics Display */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Metrics Display</h3>
+                <div className="flex gap-2 flex-wrap">
+                  {(['minimal', 'detailed', 'full'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ metricsDisplay: mode });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`px-4 py-2 rounded-lg text-sm capitalize ${
+                        profile.preferences.metricsDisplay === mode
+                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                          : 'bg-gray-800 text-gray-400 border border-gray-700'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dashboard Layout */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Dashboard Layout</h3>
+                <div className="flex gap-2">
+                  {(['compact', 'expanded'] as const).map(layout => (
+                    <button
+                      key={layout}
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ dashboardLayout: layout });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`px-4 py-2 rounded-lg text-sm capitalize ${
+                        profile.preferences.dashboardLayout === layout
+                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                          : 'bg-gray-800 text-gray-400 border border-gray-700'
+                      }`}
+                    >
+                      {layout}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reminders */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Reminders</h3>
+                <div className="flex gap-2 flex-wrap">
+                  {(['gentle', 'assertive', 'silent'] as const).map(style => (
+                    <button
+                      key={style}
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ reminderStyle: style });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`px-4 py-2 rounded-lg text-sm capitalize ${
+                        profile.preferences.reminderStyle === style
+                          ? 'bg-pink-500/20 text-pink-300 border border-pink-500/30'
+                          : 'bg-gray-800 text-gray-400 border border-gray-700'
+                      }`}
+                    >
+                      {style}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Roadmap Updates */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Roadmap Updates</h3>
+                <div className="flex gap-2 flex-wrap">
+                  {(['daily', 'weekly', 'biweekly', 'monthly'] as const).map(freq => (
+                    <button
+                      key={freq}
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ roadmapUpdateFrequency: freq });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`px-4 py-2 rounded-lg text-sm capitalize ${
+                        profile.preferences.roadmapUpdateFrequency === freq
+                          ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                          : 'bg-gray-800 text-gray-400 border border-gray-700'
+                      }`}
+                    >
+                      {freq}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

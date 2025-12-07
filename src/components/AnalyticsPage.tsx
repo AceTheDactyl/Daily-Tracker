@@ -10,7 +10,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp, BarChart3, Activity, Music,
   Heart, Brain, ArrowLeft, Clock, Target,
-  Sparkles, Zap, Shield, Waves, AlertTriangle, CheckCircle2
+  Sparkles, Zap, Shield, Waves, AlertTriangle, CheckCircle2,
+  Plus, Play, Trash2, ChevronDown, ListMusic, Edit3, X
 } from 'lucide-react';
 import {
   musicLibrary,
@@ -22,6 +23,7 @@ import { MusicLibrary } from './MusicLibrary';
 import { metricsHub, type EnhancedDeltaHVState, type MetricsSnapshot as HubMetricsSnapshot } from '../lib/metricsHub';
 import { userProfileService, type MetricsSnapshot as ProfileMetricsSnapshot } from '../lib/userProfile';
 import type { DeltaHVState } from '../lib/deltaHVEngine';
+import { storyShuffleEngine, type Playlist } from '../lib/storyShuffleEngine';
 
 // Types
 interface CheckIn {
@@ -593,6 +595,264 @@ function HealthInsights({
 }
 
 /**
+ * Library with Playlist Manager Component
+ */
+function LibraryWithPlaylists() {
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [tracks, setTracks] = useState<any[]>([]);
+  const [expandedPlaylist, setExpandedPlaylist] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [newPlaylistEmoji, setNewPlaylistEmoji] = useState('🎵');
+
+  useEffect(() => {
+    const loadData = async () => {
+      await musicLibrary.initialize();
+      const allTracks = await musicLibrary.getAllTracks();
+      setTracks(allTracks);
+      setPlaylists(storyShuffleEngine.getPlaylists());
+    };
+    loadData();
+
+    const unsub = storyShuffleEngine.subscribe(() => {
+      setPlaylists(storyShuffleEngine.getPlaylists());
+    });
+    return () => unsub();
+  }, []);
+
+  const createPlaylist = () => {
+    if (!newPlaylistName.trim()) return;
+    storyShuffleEngine.createPlaylist(newPlaylistName.trim(), undefined, newPlaylistEmoji);
+    setNewPlaylistName('');
+    setNewPlaylistEmoji('🎵');
+    setShowCreateModal(false);
+  };
+
+  const deletePlaylist = (playlistId: string) => {
+    storyShuffleEngine.deletePlaylist(playlistId);
+  };
+
+  const removeTrackFromPlaylist = (playlistId: string, trackId: string) => {
+    storyShuffleEngine.removeFromPlaylist(playlistId, trackId);
+  };
+
+  const playPlaylist = async (playlist: Playlist) => {
+    if (playlist.trackIds.length > 0) {
+      const firstTrack = tracks.find(t => t.id === playlist.trackIds[0]);
+      if (firstTrack) {
+        await musicLibrary.playTrack(firstTrack.id, firstTrack.categoryId);
+      }
+    }
+  };
+
+  const userPlaylists = playlists.filter(p => !p.isSystem);
+  const systemPlaylists = playlists.filter(p => p.isSystem);
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-light flex items-center gap-3">
+        <Music className="w-7 h-7 text-purple-400" />
+        Music Library
+      </h2>
+
+      {/* Playlist Manager Section */}
+      <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium text-white flex items-center gap-2">
+            <ListMusic className="w-5 h-5 text-cyan-400" />
+            Your Playlists
+          </h3>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            New Playlist
+          </button>
+        </div>
+
+        {/* User Playlists */}
+        {userPlaylists.length > 0 ? (
+          <div className="space-y-3 mb-6">
+            {userPlaylists.map(playlist => (
+              <div
+                key={playlist.id}
+                className="bg-gray-900/50 rounded-xl border border-gray-800 overflow-hidden"
+              >
+                <div className="flex items-center gap-4 p-4">
+                  <span className="text-3xl">{playlist.coverEmoji}</span>
+                  <div className="flex-1">
+                    <h4 className="text-white font-medium">{playlist.name}</h4>
+                    <p className="text-sm text-gray-400">{playlist.trackIds.length} tracks</p>
+                  </div>
+                  <button
+                    onClick={() => playPlaylist(playlist)}
+                    className="p-2 bg-purple-600/20 hover:bg-purple-600/30 rounded-lg transition-colors"
+                    disabled={playlist.trackIds.length === 0}
+                  >
+                    <Play className="w-5 h-5 text-purple-300" />
+                  </button>
+                  <button
+                    onClick={() => setExpandedPlaylist(expandedPlaylist === playlist.id ? null : playlist.id)}
+                    className="p-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                    <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${
+                      expandedPlaylist === playlist.id ? 'rotate-180' : ''
+                    }`} />
+                  </button>
+                  <button
+                    onClick={() => deletePlaylist(playlist.id)}
+                    className="p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-5 h-5 text-red-400" />
+                  </button>
+                </div>
+
+                {expandedPlaylist === playlist.id && (
+                  <div className="px-4 pb-4 border-t border-gray-800">
+                    {playlist.trackIds.length > 0 ? (
+                      <div className="space-y-2 mt-3">
+                        {playlist.trackIds.map((trackId, idx) => {
+                          const track = tracks.find(t => t.id === trackId);
+                          if (!track) return null;
+                          return (
+                            <div
+                              key={trackId}
+                              className="flex items-center gap-3 p-2 bg-gray-800/50 rounded-lg"
+                            >
+                              <span className="text-sm text-gray-500 w-6">{idx + 1}</span>
+                              <span className="text-lg">{EMOTIONAL_CATEGORIES[track.categoryId as EmotionalCategoryId]?.icon}</span>
+                              <div className="flex-1">
+                                <div className="text-sm text-white">{track.name}</div>
+                                <div className="text-xs text-gray-500">
+                                  {EMOTIONAL_CATEGORIES[track.categoryId as EmotionalCategoryId]?.name}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removeTrackFromPlaylist(playlist.id, trackId)}
+                                className="p-1.5 hover:bg-red-500/20 rounded transition-colors"
+                              >
+                                <X className="w-4 h-4 text-red-400" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500 text-center py-4">
+                        No tracks yet. Add songs from the DJ tab.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 mb-6 bg-gray-900/30 rounded-xl border border-gray-800">
+            <ListMusic className="w-10 h-10 mx-auto mb-3 text-gray-600" />
+            <p className="text-gray-400">No custom playlists yet</p>
+            <p className="text-sm text-gray-500 mt-1">Create your first playlist to organize your music</p>
+          </div>
+        )}
+
+        {/* System Playlists */}
+        <div className="pt-4 border-t border-gray-800">
+          <h4 className="text-sm text-gray-400 uppercase tracking-wider mb-3">AI-Generated Playlists</h4>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {systemPlaylists.map(playlist => (
+              <button
+                key={playlist.id}
+                onClick={() => playPlaylist(playlist)}
+                className="p-4 bg-gray-900/50 border border-gray-800 rounded-xl hover:border-gray-700 transition-all text-left"
+                disabled={playlist.trackIds.length === 0}
+              >
+                <span className="text-2xl block mb-2">{playlist.coverEmoji}</span>
+                <h5 className="text-sm text-white font-medium truncate">{playlist.name}</h5>
+                <p className="text-xs text-gray-500">{playlist.trackIds.length} tracks</p>
+                {playlist.basedOnMetric && (
+                  <span className={`mt-2 inline-block px-2 py-0.5 rounded text-xs ${
+                    playlist.basedOnMetric === 'symbolic' ? 'bg-purple-500/20 text-purple-300' :
+                    playlist.basedOnMetric === 'resonance' ? 'bg-cyan-500/20 text-cyan-300' :
+                    playlist.basedOnMetric === 'friction' ? 'bg-amber-500/20 text-amber-300' :
+                    'bg-green-500/20 text-green-300'
+                  }`}>
+                    {playlist.basedOnMetric}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Music Library */}
+      <div className="rounded-xl bg-gray-900/50 border border-gray-800 overflow-hidden">
+        <MusicLibrary compact />
+      </div>
+
+      {/* Create Playlist Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-md p-6">
+            <h3 className="text-lg font-medium text-white mb-4">Create New Playlist</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-gray-400 block mb-2">Playlist Name</label>
+                <input
+                  type="text"
+                  value={newPlaylistName}
+                  onChange={(e) => setNewPlaylistName(e.target.value)}
+                  placeholder="My awesome playlist..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:border-purple-500 focus:outline-none"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-400 block mb-2">Choose an Emoji</label>
+                <div className="flex gap-2 flex-wrap">
+                  {['🎵', '🎶', '🎸', '🎹', '🎤', '🎧', '💜', '🌙', '☀️', '⚡', '🔥', '🌊', '🌈', '✨', '💫', '🎯'].map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => setNewPlaylistEmoji(emoji)}
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-all ${
+                        newPlaylistEmoji === emoji
+                          ? 'bg-purple-600/30 border-2 border-purple-400'
+                          : 'bg-gray-800 border border-gray-700 hover:border-gray-600'
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewPlaylistName('');
+                }}
+                className="flex-1 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createPlaylist}
+                disabled={!newPlaylistName.trim()}
+                className="flex-1 px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Main Analytics Page Component
  */
 export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
@@ -607,7 +867,7 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
   const [profileHistory, setProfileHistory] = useState<ProfileMetricsSnapshot[]>([]);
   const [metricsHistory, setMetricsHistory] = useState<HubMetricsSnapshot[]>([]);
 
-  // Load music data
+  // Load music data and subscribe to changes
   useEffect(() => {
     const loadMusicData = async () => {
       await musicLibrary.initialize();
@@ -622,6 +882,13 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
     };
 
     loadMusicData();
+
+    // Subscribe to music library changes for real-time updates
+    const unsubscribe = musicLibrary.subscribe(() => {
+      loadMusicData();
+    });
+
+    return () => unsubscribe();
   }, [timeRange]);
 
   // Subscribe to real-time metrics from metricsHub
@@ -701,7 +968,7 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
     return { dailyStats, categoryStats, waveStats, totalTasks, completedTasks, trend };
   }, [checkIns, timeRange]);
 
-  // Music session analytics
+  // Music session analytics - now also includes listening time breakdown for donut chart
   const musicAnalytics = useMemo(() => {
     const dates = getDateRange(timeRange);
     const filteredSessions = musicSessions.filter(s => {
@@ -715,12 +982,39 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
       return { label: formatDate(date), value: Math.round(totalDuration / 60) };
     });
 
+    // Calculate category usage by sessions AND listening time for better accuracy
     const categoryUsage = Object.entries(EMOTIONAL_CATEGORIES).map(([key, cat]) => {
       const catSessions = filteredSessions.filter(s => s.categoryId === key);
-      return { label: cat.name, value: catSessions.length, color: cat.color };
+      const totalListeningTime = catSessions.reduce((sum, s) => sum + s.duration, 0);
+      return {
+        label: cat.name,
+        value: catSessions.length,
+        listeningTime: totalListeningTime,
+        color: cat.color,
+        icon: cat.icon
+      };
     }).filter(c => c.value > 0);
 
-    return { dailyListening, categoryUsage, totalSessions: filteredSessions.length };
+    // Sessions with post-session data for mood tracking
+    const sessionsWithMoodData = filteredSessions.filter(
+      s => s.postSession?.moodBefore !== undefined && s.postSession?.moodAfter !== undefined
+    );
+
+    // Calculate mood improvement stats
+    const moodChanges = sessionsWithMoodData.map(s =>
+      (s.postSession?.moodAfter || 0) - (s.postSession?.moodBefore || 0)
+    );
+    const avgMoodChange = moodChanges.length > 0
+      ? moodChanges.reduce((a, b) => a + b, 0) / moodChanges.length
+      : 0;
+
+    return {
+      dailyListening,
+      categoryUsage,
+      totalSessions: filteredSessions.length,
+      sessionsWithData: sessionsWithMoodData.length,
+      avgMoodChange
+    };
   }, [musicSessions, timeRange]);
 
   const tabs = [
@@ -1041,18 +1335,26 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
             <div className="grid md:grid-cols-2 gap-6">
               <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
                 <h3 className="text-sm font-medium text-gray-300 mb-4">Emotional Category Usage</h3>
-                <div className="flex items-center justify-center gap-6">
-                  <DonutChart data={musicAnalytics.categoryUsage} size={140} thickness={25} />
-                  <div className="space-y-2">
-                    {musicAnalytics.categoryUsage.map(cat => (
-                      <div key={cat.label} className="flex items-center gap-2 text-sm">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
-                        <span className="text-gray-400">{cat.label}</span>
-                        <span className="text-gray-500">({cat.value})</span>
-                      </div>
-                    ))}
+                {musicAnalytics.categoryUsage.length > 0 ? (
+                  <div className="flex items-center justify-center gap-6">
+                    <DonutChart data={musicAnalytics.categoryUsage} size={140} thickness={25} />
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {musicAnalytics.categoryUsage.map(cat => (
+                        <div key={cat.label} className="flex items-center gap-2 text-sm">
+                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                          <span className="text-gray-400">{cat.icon} {cat.label}</span>
+                          <span className="text-gray-500">({cat.value} • {formatDuration(cat.listeningTime)})</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <Music className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No music sessions yet</p>
+                    <p className="text-xs mt-1">Play some music to see category breakdown</p>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
@@ -1094,7 +1396,7 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
               Emotional Coherence
             </h2>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard
                 label="Coherence Rate"
                 value={coherenceStats ? `${Math.round(coherenceStats.coherenceRate)}%` : '—'}
@@ -1111,10 +1413,17 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
               />
               <StatCard
                 label="Sessions w/ Data"
-                value={coherenceStats ? `${coherenceStats.coherentSessions + (coherenceStats.completedSessions - coherenceStats.coherentSessions)}` : '—'}
-                subValue="With post-session feedback"
+                value={musicAnalytics.sessionsWithData}
+                subValue={`of ${musicAnalytics.totalSessions} total`}
                 icon={Brain}
                 color="purple"
+              />
+              <StatCard
+                label="Mood Improvement"
+                value={musicAnalytics.avgMoodChange > 0 ? `+${musicAnalytics.avgMoodChange.toFixed(1)}` : musicAnalytics.avgMoodChange.toFixed(1)}
+                subValue="From music sessions"
+                icon={Heart}
+                color={musicAnalytics.avgMoodChange > 0 ? 'green' : 'amber'}
               />
             </div>
 
@@ -1246,15 +1555,7 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
 
         {/* Library Tab */}
         {activeTab === 'library' && (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-light flex items-center gap-3">
-              <Music className="w-7 h-7 text-purple-400" />
-              Music Library
-            </h2>
-            <div className="rounded-xl bg-gray-900/50 border border-gray-800 overflow-hidden">
-              <MusicLibrary compact />
-            </div>
-          </div>
+          <LibraryWithPlaylists />
         )}
       </div>
     </div>
