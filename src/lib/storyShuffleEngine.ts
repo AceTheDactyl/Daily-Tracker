@@ -883,6 +883,308 @@ class StoryShuffleEngine {
     return this.createPlaylist(`${metric} Balance`, `Songs for ${metric} support`);
   }
 
+  /**
+   * AI-driven coherence-based playlist generation
+   * Analyzes DeltaHV state and creates a personalized playlist based on:
+   * - Current field state (coherent, transitioning, fragmented, dormant)
+   * - Metric imbalances that need addressing
+   * - User's skip patterns and preferences
+   * - Healing progress and emotional trajectory
+   */
+  async generateCoherencePlaylist(
+    deltaHV: DeltaHVState,
+    purpose: 'balance' | 'boost' | 'calm' | 'focus' | 'heal' | 'energize'
+  ): Promise<Playlist> {
+    const tracks = await musicLibrary.getAllTracks();
+    if (tracks.length === 0) {
+      return this.createPlaylist('Empty Playlist', 'Add tracks to your library first', '📭');
+    }
+
+    const needs = {
+      symbolic: deltaHV.symbolicDensity / 100,
+      resonance: deltaHV.resonanceCoupling / 100,
+      friction: deltaHV.frictionCoefficient / 100,
+      stability: deltaHV.harmonicStability / 100
+    };
+
+    // Determine which categories to prioritize based on purpose and current state
+    let categoryWeights: Record<EmotionalCategoryId, number> = {
+      JOY: 1, CALM: 1, FOCUS: 1, ENERGY: 1, MELANCHOLY: 1,
+      LOVE: 1, COURAGE: 1, WONDER: 1, GRATITUDE: 1, RELEASE: 1
+    };
+
+    // Adjust weights based on purpose
+    switch (purpose) {
+      case 'balance':
+        // Inverse weighting - boost what's low
+        if (needs.symbolic < 0.4) {
+          categoryWeights.WONDER = 2; categoryWeights.FOCUS = 2;
+        }
+        if (needs.resonance < 0.4) {
+          categoryWeights.JOY = 2; categoryWeights.LOVE = 2;
+        }
+        if (needs.friction > 0.6) {
+          categoryWeights.RELEASE = 2; categoryWeights.CALM = 2;
+        }
+        if (needs.stability < 0.4) {
+          categoryWeights.CALM = 2; categoryWeights.GRATITUDE = 2;
+        }
+        break;
+
+      case 'boost':
+        categoryWeights.JOY = 3; categoryWeights.ENERGY = 3;
+        categoryWeights.COURAGE = 2; categoryWeights.WONDER = 2;
+        categoryWeights.MELANCHOLY = 0.2;
+        break;
+
+      case 'calm':
+        categoryWeights.CALM = 3; categoryWeights.GRATITUDE = 2;
+        categoryWeights.RELEASE = 2;
+        categoryWeights.ENERGY = 0.5; categoryWeights.COURAGE = 0.5;
+        break;
+
+      case 'focus':
+        categoryWeights.FOCUS = 3; categoryWeights.CALM = 2;
+        categoryWeights.WONDER = 1.5;
+        categoryWeights.ENERGY = 0.5;
+        break;
+
+      case 'heal':
+        // Use skip patterns to avoid frequently-skipped melancholy
+        categoryWeights.RELEASE = 2; categoryWeights.LOVE = 2;
+        categoryWeights.GRATITUDE = 2;
+        // Add some melancholy for processing but not too much
+        categoryWeights.MELANCHOLY = needs.friction > 0.5 ? 0.5 : 1;
+        break;
+
+      case 'energize':
+        categoryWeights.ENERGY = 3; categoryWeights.JOY = 2;
+        categoryWeights.COURAGE = 2;
+        categoryWeights.CALM = 0.3; categoryWeights.MELANCHOLY = 0.2;
+        break;
+    }
+
+    // Factor in field state
+    if (deltaHV.fieldState === 'fragmented') {
+      categoryWeights.CALM = Math.max(categoryWeights.CALM, 2);
+      categoryWeights.RELEASE = Math.max(categoryWeights.RELEASE, 1.5);
+    } else if (deltaHV.fieldState === 'coherent') {
+      categoryWeights.WONDER = Math.max(categoryWeights.WONDER, 1.5);
+      categoryWeights.FOCUS = Math.max(categoryWeights.FOCUS, 1.5);
+    }
+
+    // Factor in skip patterns - avoid categories user frequently skips
+    const categorySkipRatios = this.storyMetrics?.categorySkipRatios;
+    if (categorySkipRatios) {
+      Object.entries(categorySkipRatios).forEach(([catId, data]) => {
+        if (data.plays > 5 && data.skips / data.plays > 0.7) {
+          // User frequently skips this category - reduce weight
+          categoryWeights[catId as EmotionalCategoryId] *= 0.5;
+        } else if (data.plays > 5 && data.avgListenRatio > 0.8) {
+          // User enjoys this category - increase weight
+          categoryWeights[catId as EmotionalCategoryId] *= 1.3;
+        }
+      });
+    }
+
+    // Score and sort tracks
+    const scoredTracks = tracks.map(track => {
+      const catMetrics = CATEGORY_METRIC_MAP[track.categoryId];
+      const weight = categoryWeights[track.categoryId] || 1;
+
+      // Calculate score based on weighted distance to target
+      let score = weight;
+
+      // Add bonus for matching user's needs
+      if (needs.symbolic < 0.5 && catMetrics.symbolic > 0.7) score += 0.5;
+      if (needs.resonance < 0.5 && catMetrics.resonance > 0.7) score += 0.5;
+      if (needs.friction > 0.5 && catMetrics.friction < 0.3) score += 0.5;
+      if (needs.stability < 0.5 && catMetrics.stability > 0.7) score += 0.5;
+
+      return { track, score };
+    });
+
+    // Sort by score and take top tracks
+    scoredTracks.sort((a, b) => b.score - a.score);
+    const selectedTracks = scoredTracks.slice(0, Math.min(25, tracks.length));
+
+    // Create playlist with descriptive name
+    const purposeNames: Record<string, string> = {
+      balance: 'Balance & Harmony',
+      boost: 'Energy Boost',
+      calm: 'Calm & Center',
+      focus: 'Deep Focus',
+      heal: 'Healing Journey',
+      energize: 'Power Up'
+    };
+
+    const purposeEmojis: Record<string, string> = {
+      balance: '⚖️',
+      boost: '🚀',
+      calm: '🌊',
+      focus: '🎯',
+      heal: '💜',
+      energize: '⚡'
+    };
+
+    const playlistName = `AI: ${purposeNames[purpose]} (${new Date().toLocaleDateString()})`;
+    const playlist = this.createPlaylist(
+      playlistName,
+      `AI-generated playlist for ${purpose}. Field state: ${deltaHV.fieldState}. ΔHV: ${deltaHV.deltaHV}%`,
+      purposeEmojis[purpose]
+    );
+
+    playlist.trackIds = selectedTracks.map(s => s.track.id);
+    this.saveToStorage();
+    this.notifyListeners();
+
+    return playlist;
+  }
+
+  /**
+   * Reorder tracks in a playlist
+   */
+  reorderPlaylistTracks(playlistId: string, fromIndex: number, toIndex: number): void {
+    const playlist = this.playlists.find(p => p.id === playlistId);
+    if (!playlist || fromIndex < 0 || fromIndex >= playlist.trackIds.length ||
+        toIndex < 0 || toIndex >= playlist.trackIds.length) {
+      return;
+    }
+
+    const [removed] = playlist.trackIds.splice(fromIndex, 1);
+    playlist.trackIds.splice(toIndex, 0, removed);
+    playlist.updatedAt = new Date().toISOString();
+    this.saveToStorage();
+    this.notifyListeners();
+  }
+
+  /**
+   * Get AI prompt context for playlist and music state
+   */
+  getAIPromptContext(): string {
+    let context = `Music & Playlist State:\n`;
+
+    // Story metrics
+    if (this.storyMetrics) {
+      context += `- Total plays: ${this.storyMetrics.totalPlays}\n`;
+      context += `- Skip ratio: ${Math.round(this.storyMetrics.skipRatio * 100)}%\n`;
+      context += `- Authorship score: ${this.storyMetrics.authorshipScore}%\n`;
+      context += `- Emotional trajectory: ${this.storyMetrics.emotionalTrajectory}\n`;
+      context += `- Dominant emotion: ${this.storyMetrics.dominantEmotion || 'varied'}\n`;
+      context += `- Healing phase: ${this.storyMetrics.melancholyProgress.currentPhase}\n`;
+      context += `- Healing indicator: ${this.storyMetrics.melancholyProgress.healingIndicator}%\n`;
+    }
+
+    // Metric influence from music
+    const influence = this.getMetricInfluenceFromMusic();
+    context += `\nMusic Metric Influence:\n`;
+    context += `- Symbolic influence: ${influence.symbolic.value}%\n`;
+    context += `- Resonance influence: ${influence.resonance.value}%\n`;
+    context += `- Friction influence: ${influence.friction.value}%\n`;
+    context += `- Stability influence: ${influence.stability.value}%\n`;
+
+    // Playlists
+    context += `\nPlaylists: ${this.playlists.length} total\n`;
+    const userPlaylists = this.playlists.filter(p => !p.isSystem);
+    const aiPlaylists = this.playlists.filter(p => p.name.startsWith('AI:'));
+    context += `- User playlists: ${userPlaylists.length}\n`;
+    context += `- AI-generated playlists: ${aiPlaylists.length}\n`;
+
+    // Shuffle state
+    if (this.shuffleState) {
+      context += `\nShuffle: ${this.shuffleState.queue.length} tracks queued\n`;
+      context += `- Position: ${this.shuffleState.currentIndex + 1}/${this.shuffleState.queue.length}\n`;
+    }
+
+    return context;
+  }
+
+  /**
+   * Get playlist generation recommendations based on current state
+   */
+  getPlaylistRecommendations(deltaHV: DeltaHVState | null): {
+    purpose: 'balance' | 'boost' | 'calm' | 'focus' | 'heal' | 'energize';
+    reason: string;
+    emoji: string;
+  }[] {
+    const recommendations: {
+      purpose: 'balance' | 'boost' | 'calm' | 'focus' | 'heal' | 'energize';
+      reason: string;
+      emoji: string;
+    }[] = [];
+
+    if (!deltaHV) {
+      return [{
+        purpose: 'balance',
+        reason: 'Start with a balanced playlist while we learn your metrics',
+        emoji: '⚖️'
+      }];
+    }
+
+    const needs = {
+      symbolic: deltaHV.symbolicDensity,
+      resonance: deltaHV.resonanceCoupling,
+      friction: deltaHV.frictionCoefficient,
+      stability: deltaHV.harmonicStability
+    };
+
+    // High friction - need calm or release
+    if (needs.friction > 60) {
+      recommendations.push({
+        purpose: 'calm',
+        reason: `High friction detected (${needs.friction}%). Try calming music to release tension.`,
+        emoji: '🌊'
+      });
+    }
+
+    // Low stability - need grounding
+    if (needs.stability < 40) {
+      recommendations.push({
+        purpose: 'focus',
+        reason: `Stability is low (${needs.stability}%). Focus music can help ground you.`,
+        emoji: '🎯'
+      });
+    }
+
+    // Low resonance - need connection
+    if (needs.resonance < 40) {
+      recommendations.push({
+        purpose: 'boost',
+        reason: `Resonance is low (${needs.resonance}%). Uplifting music can help reconnect.`,
+        emoji: '🚀'
+      });
+    }
+
+    // Fragmented state - healing focus
+    if (deltaHV.fieldState === 'fragmented') {
+      recommendations.push({
+        purpose: 'heal',
+        reason: 'Field state is fragmented. A healing playlist can help integrate.',
+        emoji: '💜'
+      });
+    }
+
+    // Coherent state - can push forward
+    if (deltaHV.fieldState === 'coherent' && deltaHV.deltaHV > 60) {
+      recommendations.push({
+        purpose: 'energize',
+        reason: `You're in a coherent state (ΔHV: ${deltaHV.deltaHV}%). Time to energize!`,
+        emoji: '⚡'
+      });
+    }
+
+    // Default recommendation
+    if (recommendations.length === 0) {
+      recommendations.push({
+        purpose: 'balance',
+        reason: 'Maintain your current balanced state with varied music.',
+        emoji: '⚖️'
+      });
+    }
+
+    return recommendations;
+  }
+
   // ========================================
   // Metric Detection & Brain Region Mapping
   // ========================================

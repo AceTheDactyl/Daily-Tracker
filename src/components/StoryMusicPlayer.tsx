@@ -31,6 +31,11 @@ import {
   Check,
   Music,
   BookOpen,
+  Wand2,
+  Edit3,
+  GripVertical,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import type { DeltaHVState } from '../lib/deltaHVEngine';
 import type { MusicTrack, EmotionalCategoryId } from '../lib/musicLibrary';
@@ -66,6 +71,9 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
   const [showStoryMetrics, setShowStoryMetrics] = useState(false);
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [showAIRecommendations, setShowAIRecommendations] = useState(false);
+  const [generatingPlaylist, setGeneratingPlaylist] = useState(false);
+  const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
 
   // Story metrics
   const [storyMetrics, setStoryMetrics] = useState<StoryMetrics | null>(null);
@@ -270,6 +278,49 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
       setShowCreatePlaylist(false);
     }
   }, [newPlaylistName]);
+
+  // Generate AI playlist
+  const handleGenerateAIPlaylist = useCallback(async (
+    purpose: 'balance' | 'boost' | 'calm' | 'focus' | 'heal' | 'energize'
+  ) => {
+    if (!deltaHV) return;
+    setGeneratingPlaylist(true);
+    try {
+      await storyShuffleEngine.generateCoherencePlaylist(deltaHV, purpose);
+      setShowAIRecommendations(false);
+    } finally {
+      setGeneratingPlaylist(false);
+    }
+  }, [deltaHV]);
+
+  // Play entire playlist
+  const handlePlayPlaylist = useCallback(async (playlist: Playlist) => {
+    if (playlist.trackIds.length === 0) return;
+    const firstTrackId = playlist.trackIds[0];
+    const firstTrack = tracks.find(t => t.id === firstTrackId);
+    if (firstTrack) {
+      // Set the shuffle queue to the playlist tracks
+      setShuffleQueue(playlist.trackIds);
+      await playTrack(firstTrack);
+    }
+  }, [tracks, playTrack]);
+
+  // Delete playlist (only non-system)
+  const handleDeletePlaylist = useCallback((playlistId: string) => {
+    if (confirm('Delete this playlist?')) {
+      storyShuffleEngine.deletePlaylist(playlistId);
+    }
+  }, []);
+
+  // Remove track from playlist
+  const handleRemoveFromPlaylist = useCallback((playlistId: string, trackId: string) => {
+    storyShuffleEngine.removeFromPlaylist(playlistId, trackId);
+  }, []);
+
+  // Get AI playlist recommendations
+  const aiRecommendations = useMemo(() => {
+    return storyShuffleEngine.getPlaylistRecommendations(deltaHV);
+  }, [deltaHV]);
 
   // Get category color
   const getCategoryColor = (categoryId: EmotionalCategoryId): string => {
@@ -531,30 +582,148 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
           <div className="flex items-center gap-2">
             <ListMusic className="w-4 h-4" />
             <span className="text-sm">Playlists</span>
+            <span className="text-xs text-gray-500">({playlists.length})</span>
           </div>
           <ChevronRight className={`w-4 h-4 transition-transform ${showPlaylists ? 'rotate-90' : ''}`} />
         </button>
 
         {showPlaylists && (
-          <div className="px-4 pb-4 space-y-2">
-            {playlists.map(playlist => (
-              <div
-                key={playlist.id}
-                className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800/50 transition-colors cursor-pointer group"
-              >
-                <span className="text-xl">{playlist.coverEmoji}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-white truncate">{playlist.name}</div>
-                  <div className="text-xs text-gray-500">
-                    {playlist.trackIds.length} tracks
-                    {playlist.isSystem && ' • System'}
-                  </div>
+          <div className="px-4 pb-4 space-y-3">
+            {/* AI Playlist Generator */}
+            <div className="p-3 bg-gradient-to-r from-purple-900/30 to-cyan-900/30 rounded-xl border border-purple-500/20">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Wand2 className="w-4 h-4 text-purple-400" />
+                  <span className="text-sm font-medium text-white">AI Playlist Generator</span>
                 </div>
-                <button className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-white transition-all">
-                  <Play className="w-4 h-4" />
+                <button
+                  onClick={() => setShowAIRecommendations(!showAIRecommendations)}
+                  className="text-xs text-purple-300 hover:text-purple-200"
+                >
+                  {showAIRecommendations ? 'Hide' : 'Show'} Recommendations
                 </button>
               </div>
-            ))}
+
+              {showAIRecommendations && (
+                <div className="space-y-2 mt-3">
+                  {generatingPlaylist ? (
+                    <div className="flex items-center justify-center gap-2 py-4 text-purple-300">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">Generating your playlist...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-xs text-gray-400 mb-2">
+                        Based on your current metrics, here are playlist suggestions:
+                      </p>
+                      {aiRecommendations.map((rec, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleGenerateAIPlaylist(rec.purpose)}
+                          className="w-full p-2 rounded-lg bg-gray-800/50 hover:bg-gray-800 text-left transition-colors group"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{rec.emoji}</span>
+                            <div className="flex-1">
+                              <div className="text-sm text-white capitalize">{rec.purpose}</div>
+                              <div className="text-xs text-gray-500">{rec.reason}</div>
+                            </div>
+                            <Wand2 className="w-4 h-4 text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {!showAIRecommendations && (
+                <p className="text-xs text-gray-400">
+                  Let AI create a playlist based on your coherence needs
+                </p>
+              )}
+            </div>
+
+            {/* Playlists List */}
+            <div className="space-y-2">
+              {playlists.map(playlist => (
+                <div key={playlist.id}>
+                  <div
+                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800/50 transition-colors cursor-pointer group"
+                    onClick={() => editingPlaylistId === playlist.id ? setEditingPlaylistId(null) : null}
+                  >
+                    <span className="text-xl">{playlist.coverEmoji}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-white truncate flex items-center gap-2">
+                        {playlist.name}
+                        {playlist.name.startsWith('AI:') && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded">AI</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {playlist.trackIds.length} tracks
+                        {playlist.isSystem && ' • System'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handlePlayPlaylist(playlist); }}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-white transition-all"
+                        title="Play playlist"
+                      >
+                        <Play className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditingPlaylistId(editingPlaylistId === playlist.id ? null : playlist.id); }}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-cyan-400 transition-all"
+                        title="Edit playlist"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      {!playlist.isSystem && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeletePlaylist(playlist.id); }}
+                          className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-red-400 transition-all"
+                          title="Delete playlist"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Expanded Playlist Editor */}
+                  {editingPlaylistId === playlist.id && (
+                    <div className="ml-8 mt-2 mb-2 p-2 bg-gray-900/50 rounded-lg border border-gray-800 max-h-48 overflow-y-auto">
+                      {playlist.trackIds.length === 0 ? (
+                        <p className="text-xs text-gray-500 text-center py-2">No tracks in this playlist</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {playlist.trackIds.map((trackId, idx) => {
+                            const track = tracks.find(t => t.id === trackId);
+                            if (!track) return null;
+                            return (
+                              <div key={trackId} className="flex items-center gap-2 p-1.5 rounded hover:bg-gray-800/50 group/track">
+                                <GripVertical className="w-3 h-3 text-gray-600" />
+                                <span className="text-xs text-gray-400 w-4">{idx + 1}</span>
+                                <span className="text-sm">{EMOTIONAL_CATEGORIES[track.categoryId]?.icon}</span>
+                                <span className="text-xs text-gray-300 flex-1 truncate">{track.name}</span>
+                                <button
+                                  onClick={() => handleRemoveFromPlaylist(playlist.id, trackId)}
+                                  className="opacity-0 group-hover/track:opacity-100 p-1 text-gray-500 hover:text-red-400"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
 
             {/* Create Playlist Button */}
             {showCreatePlaylist ? (
