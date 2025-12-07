@@ -3,7 +3,7 @@ import {
   Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
   CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer,
-  Activity, TrendingUp, AlertTriangle, Gauge, FileText
+  Activity, TrendingUp, AlertTriangle, Gauge, FileText, Settings
 } from 'lucide-react';
 import { GoogleCalendarService } from './lib/googleCalendar';
 import { getDeltaHVState } from './lib/deltaHVEngine';
@@ -11,8 +11,8 @@ import type { DeltaHVState } from './lib/deltaHVEngine';
 import { auditLog, logCheckInCreated, logCheckInCompleted, logDeltaHVCalculated } from './lib/auditLog';
 import { RhythmState, createRhythmStateEngine } from './lib/rhythmStateEngine';
 import type { RhythmStateEngine, RhythmStateInfo } from './lib/rhythmStateEngine';
-import { createRhythmPlanner } from './lib/rhythmPlanner';
-import type { RhythmPlanner, PlannerSuggestion } from './lib/rhythmPlanner';
+import { createRhythmPlanner, DEFAULT_PREFERENCES } from './lib/rhythmPlanner';
+import type { RhythmPlanner, PlannerSuggestion, PlannerPreferences, CalendarServiceInterface } from './lib/rhythmPlanner';
 
 // Storage safety shim
 declare global {
@@ -178,10 +178,12 @@ export default function App() {
   // Audit Trail UI State (Phase 4)
   const [auditTrailOpen, setAuditTrailOpen] = useState(false);
 
-  // Rhythm Planner (Phase 3 Partial)
+  // Rhythm Planner (Phase 3 Complete)
   const plannerRef = useRef<RhythmPlanner | null>(null);
   const [plannerSuggestions, setPlannerSuggestions] = useState<PlannerSuggestion[]>([]);
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(true);
+  const [plannerPreferences, setPlannerPreferences] = useState<PlannerPreferences>(DEFAULT_PREFERENCES);
+  const [plannerSettingsOpen, setPlannerSettingsOpen] = useState(false);
 
   // Load data with safe storage
   useEffect(() => {
@@ -246,6 +248,11 @@ export default function App() {
         // Subscribe to planner suggestions
         plannerRef.current.subscribe((suggestions) => {
           setPlannerSuggestions(suggestions);
+        });
+
+        // Subscribe to planner preferences changes
+        plannerRef.current.subscribeToPreferences((prefs) => {
+          setPlannerPreferences(prefs);
         });
 
         // Subscribe to rhythm state changes and notify planner
@@ -342,6 +349,40 @@ export default function App() {
 
     initGCal();
   }, []);
+
+  // Connect planner to Google Calendar when authenticated (Phase 3 Complete)
+  useEffect(() => {
+    if (plannerRef.current && gcalService && gcalAuthed) {
+      // Create a wrapper that adapts GoogleCalendarService to CalendarServiceInterface
+      const calendarServiceAdapter: CalendarServiceInterface = {
+        createEvent: async (event) => {
+          const start = new Date(event.start);
+          const end = new Date(event.end);
+          return await gcalService.createEvent({
+            summary: event.summary,
+            description: event.description || '',
+            start: start.toISOString(),
+            end: end.toISOString(),
+            colorId: event.colorId
+          });
+        },
+        listEvents: async (timeMin, timeMax) => {
+          return await gcalService.listEvents(timeMin, timeMax);
+        },
+        deleteEvent: async (eventId) => {
+          await gcalService.deleteEvent(eventId);
+        }
+      };
+
+      plannerRef.current.setCalendarService(calendarServiceAdapter);
+
+      // Refresh calendar events for conflict detection
+      plannerRef.current.refreshCalendarEvents();
+    } else if (plannerRef.current && !gcalAuthed) {
+      // Disconnect calendar service if not authenticated
+      plannerRef.current.setCalendarService(null);
+    }
+  }, [gcalService, gcalAuthed]);
 
   // Sync to Google Calendar
   const syncToGoogleCalendar = async (checkIn: CheckIn, forceSend: boolean = false) => {
@@ -997,96 +1038,137 @@ export default function App() {
           </div>
         )}
 
-        {/* AI Planner Suggestions (Phase 3 Partial) */}
-        {plannerSuggestions.length > 0 && (
+        {/* AI Planner Suggestions (Phase 3 Complete) */}
+        {(plannerSuggestions.length > 0 || gcalAuthed) && (
           <div className="bg-gradient-to-r from-purple-950/40 to-cyan-950/40 backdrop-blur border border-purple-700/30 rounded-2xl overflow-hidden">
-            <button
-              onClick={() => setSuggestionsExpanded(!suggestionsExpanded)}
-              className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
-            >
-              <div className="flex items-center gap-3">
+            <div className="p-4 flex items-center justify-between">
+              <button
+                onClick={() => setSuggestionsExpanded(!suggestionsExpanded)}
+                className="flex items-center gap-3 flex-1 hover:bg-white/5 transition-colors rounded-lg -m-2 p-2"
+              >
                 <div className="w-10 h-10 rounded-full bg-purple-900/60 flex items-center justify-center">
                   <Sparkles className="w-5 h-5 text-purple-400" />
                 </div>
                 <div className="text-left">
                   <p className="font-medium flex items-center gap-2">
-                    AI Suggestions
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-purple-900/60 text-purple-300">
-                      {plannerSuggestions.length} active
-                    </span>
+                    AI Planner
+                    {plannerSuggestions.length > 0 && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-purple-900/60 text-purple-300">
+                        {plannerSuggestions.length} active
+                      </span>
+                    )}
+                    {plannerPreferences.autoScheduleEnabled && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-900/60 text-cyan-300">
+                        Auto
+                      </span>
+                    )}
                   </p>
-                  <p className="text-sm text-gray-400">Rhythm optimization recommendations</p>
+                  <p className="text-sm text-gray-400">
+                    {plannerPreferences.autoScheduleEnabled
+                      ? 'Auto-scheduling enabled'
+                      : 'Rhythm optimization recommendations'}
+                  </p>
                 </div>
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPlannerSettingsOpen(true)}
+                  className="p-2 rounded-lg hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
+                  title="Planner Settings"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+                {suggestionsExpanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
               </div>
-              {suggestionsExpanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
-            </button>
+            </div>
 
             {suggestionsExpanded && (
               <div className="px-4 pb-4 space-y-3">
-                {plannerSuggestions.map(suggestion => (
-                  <div
-                    key={suggestion.id}
-                    className={`rounded-xl p-4 border ${
-                      suggestion.priority === 'high' ? 'bg-rose-950/30 border-rose-700/40' :
-                      suggestion.priority === 'medium' ? 'bg-amber-950/30 border-amber-700/40' :
-                      'bg-gray-900/40 border-gray-700/40'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <p className={`font-medium ${
-                          suggestion.priority === 'high' ? 'text-rose-300' :
-                          suggestion.priority === 'medium' ? 'text-amber-300' :
-                          'text-gray-300'
-                        }`}>
-                          {suggestion.title}
-                        </p>
-                        <p className="text-sm text-gray-400 mt-1">{suggestion.description}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        {suggestion.action?.type === 'create_event' && (
-                          <button
-                            onClick={() => {
-                              const accepted = plannerRef.current?.acceptSuggestion(suggestion.id);
-                              if (accepted?.action?.payload) {
-                                const payload = accepted.action.payload;
-                                const start = new Date();
-                                start.setMinutes(start.getMinutes() + 5);
-                                scheduleBeat(
-                                  'General',
-                                  payload.summary,
-                                  start,
-                                  payload.description,
-                                  undefined,
-                                  false
-                                );
-                              }
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-sm"
-                          >
-                            Schedule
-                          </button>
-                        )}
-                        <button
-                          onClick={() => plannerRef.current?.dismissSuggestion(suggestion.id)}
-                          className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm text-gray-400"
-                        >
-                          Dismiss
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 mt-2">
-                      <span className={`text-xs px-2 py-0.5 rounded ${
-                        suggestion.priority === 'high' ? 'bg-rose-900/50 text-rose-300' :
-                        suggestion.priority === 'medium' ? 'bg-amber-900/50 text-amber-300' :
-                        'bg-gray-800 text-gray-400'
-                      }`}>
-                        {suggestion.priority}
-                      </span>
-                      <span className="text-xs text-gray-500">{suggestion.type.replace(/_/g, ' ')}</span>
-                    </div>
+                {plannerSuggestions.length === 0 ? (
+                  <div className="text-center py-6 text-gray-500">
+                    <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No suggestions yet</p>
+                    <p className="text-xs mt-1">Suggestions appear based on your rhythm patterns</p>
                   </div>
-                ))}
+                ) : (
+                  plannerSuggestions.map(suggestion => (
+                    <div
+                      key={suggestion.id}
+                      className={`rounded-xl p-4 border ${
+                        suggestion.autoScheduled ? 'bg-cyan-950/30 border-cyan-700/40' :
+                        suggestion.priority === 'high' ? 'bg-rose-950/30 border-rose-700/40' :
+                        suggestion.priority === 'medium' ? 'bg-amber-950/30 border-amber-700/40' :
+                        'bg-gray-900/40 border-gray-700/40'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <p className={`font-medium ${
+                            suggestion.autoScheduled ? 'text-cyan-300' :
+                            suggestion.priority === 'high' ? 'text-rose-300' :
+                            suggestion.priority === 'medium' ? 'text-amber-300' :
+                            'text-gray-300'
+                          }`}>
+                            {suggestion.title}
+                          </p>
+                          <p className="text-sm text-gray-400 mt-1">{suggestion.description}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          {suggestion.action?.type === 'create_event' && (
+                            <button
+                              onClick={() => {
+                                const accepted = plannerRef.current?.acceptSuggestion(suggestion.id);
+                                if (accepted?.action?.payload) {
+                                  const payload = accepted.action.payload;
+                                  const start = new Date();
+                                  start.setMinutes(start.getMinutes() + 5);
+                                  scheduleBeat(
+                                    'General',
+                                    payload.summary,
+                                    start,
+                                    payload.description,
+                                    undefined,
+                                    false
+                                  );
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-sm"
+                            >
+                              Schedule
+                            </button>
+                          )}
+                          {suggestion.autoScheduled && (
+                            <button
+                              onClick={async () => {
+                                await plannerRef.current?.cancelAutoScheduledEvent(suggestion.id);
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-sm"
+                            >
+                              Cancel Event
+                            </button>
+                          )}
+                          <button
+                            onClick={() => plannerRef.current?.dismissSuggestion(suggestion.id)}
+                            className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm text-gray-400"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          suggestion.autoScheduled ? 'bg-cyan-900/50 text-cyan-300' :
+                          suggestion.priority === 'high' ? 'bg-rose-900/50 text-rose-300' :
+                          suggestion.priority === 'medium' ? 'bg-amber-900/50 text-amber-300' :
+                          'bg-gray-800 text-gray-400'
+                        }`}>
+                          {suggestion.autoScheduled ? 'auto-scheduled' : suggestion.priority}
+                        </span>
+                        <span className="text-xs text-gray-500">{suggestion.type.replace(/_/g, ' ')}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>
@@ -1556,6 +1638,19 @@ export default function App() {
         {/* Audit Trail Modal (Phase 4) */}
         {auditTrailOpen && (
           <AuditTrailModal onClose={() => setAuditTrailOpen(false)} />
+        )}
+
+        {/* Planner Settings Modal (Phase 3 Complete) */}
+        {plannerSettingsOpen && (
+          <PlannerSettingsModal
+            preferences={plannerPreferences}
+            gcalConnected={gcalAuthed}
+            onClose={() => setPlannerSettingsOpen(false)}
+            onSave={(prefs) => {
+              plannerRef.current?.updatePreferences(prefs);
+              setPlannerSettingsOpen(false);
+            }}
+          />
         )}
       </div>
     </div>
@@ -2347,6 +2442,252 @@ function AuditTrailModal({ onClose }: { onClose: () => void }) {
               </div>
             ))
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Planner Settings Modal (Phase 3 Complete)
+ * Configure AI planner behavior and auto-scheduling preferences
+ */
+function PlannerSettingsModal({
+  preferences,
+  gcalConnected,
+  onClose,
+  onSave
+}: {
+  preferences: PlannerPreferences;
+  gcalConnected: boolean;
+  onClose: () => void;
+  onSave: (prefs: PlannerPreferences) => void;
+}) {
+  const [localPrefs, setLocalPrefs] = useState<PlannerPreferences>(preferences);
+
+  const updatePref = <K extends keyof PlannerPreferences>(key: K, value: PlannerPreferences[K]) => {
+    setLocalPrefs(prev => ({ ...prev, [key]: value }));
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="w-full max-w-lg bg-gray-950 border border-gray-800 rounded-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-800">
+          <div className="flex items-center gap-3">
+            <Settings className="w-6 h-6 text-purple-400" />
+            <div>
+              <h2 className="text-xl font-light">AI Planner Settings</h2>
+              <p className="text-xs text-gray-500">Configure rhythm optimization behavior</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg bg-gray-900/70 border border-gray-800 hover:bg-gray-800"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-4 space-y-6 max-h-[70vh] overflow-y-auto">
+          {/* Auto-Scheduling Section */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              Auto-Scheduling
+            </h3>
+
+            {!gcalConnected && (
+              <div className="rounded-lg bg-amber-950/30 border border-amber-700/40 p-3 text-sm text-amber-300">
+                <AlertTriangle className="w-4 h-4 inline mr-2" />
+                Connect Google Calendar to enable auto-scheduling features
+              </div>
+            )}
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">Enable Auto-Scheduling</p>
+                <p className="text-xs text-gray-500">Automatically create calendar events for suggestions</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.autoScheduleEnabled}
+                onChange={(e) => updatePref('autoScheduleEnabled', e.target.checked)}
+                disabled={!gcalConnected}
+                className="rounded w-5 h-5"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">Auto-Schedule Breaks</p>
+                <p className="text-xs text-gray-500">Automatically add breaks after extended focus</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.autoScheduleBreaks}
+                onChange={(e) => updatePref('autoScheduleBreaks', e.target.checked)}
+                disabled={!gcalConnected || !localPrefs.autoScheduleEnabled}
+                className="rounded w-5 h-5"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">Auto-Schedule Focus Blocks</p>
+                <p className="text-xs text-gray-500">Automatically create focus blocks when suggested</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.autoScheduleFocusBlocks}
+                onChange={(e) => updatePref('autoScheduleFocusBlocks', e.target.checked)}
+                disabled={!gcalConnected || !localPrefs.autoScheduleEnabled}
+                className="rounded w-5 h-5"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">Require Confirmation</p>
+                <p className="text-xs text-gray-500">Ask before auto-scheduling events</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.requireConfirmation}
+                onChange={(e) => updatePref('requireConfirmation', e.target.checked)}
+                disabled={!gcalConnected || !localPrefs.autoScheduleEnabled}
+                className="rounded w-5 h-5"
+              />
+            </label>
+          </div>
+
+          {/* Timing Settings */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-cyan-400" />
+              Timing Settings
+            </h3>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-800">
+                <label className="text-xs text-gray-400">Focus Break Threshold (min)</label>
+                <input
+                  type="number"
+                  min="30"
+                  max="180"
+                  value={localPrefs.focusBreakThreshold}
+                  onChange={(e) => updatePref('focusBreakThreshold', parseInt(e.target.value) || 90)}
+                  className="w-full mt-1 px-2 py-1 rounded bg-gray-800 border border-gray-700 text-sm"
+                />
+              </div>
+
+              <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-800">
+                <label className="text-xs text-gray-400">Default Break Duration (min)</label>
+                <input
+                  type="number"
+                  min="5"
+                  max="60"
+                  value={localPrefs.defaultBreakDuration}
+                  onChange={(e) => updatePref('defaultBreakDuration', parseInt(e.target.value) || 15)}
+                  className="w-full mt-1 px-2 py-1 rounded bg-gray-800 border border-gray-700 text-sm"
+                />
+              </div>
+
+              <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-800">
+                <label className="text-xs text-gray-400">Default Focus Block (min)</label>
+                <input
+                  type="number"
+                  min="25"
+                  max="120"
+                  value={localPrefs.defaultFocusBlockDuration}
+                  onChange={(e) => updatePref('defaultFocusBlockDuration', parseInt(e.target.value) || 50)}
+                  className="w-full mt-1 px-2 py-1 rounded bg-gray-800 border border-gray-700 text-sm"
+                />
+              </div>
+
+              <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-800">
+                <label className="text-xs text-gray-400">Working Hours</label>
+                <div className="flex items-center gap-1 mt-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={localPrefs.workingHoursStart}
+                    onChange={(e) => updatePref('workingHoursStart', parseInt(e.target.value) || 9)}
+                    className="w-14 px-2 py-1 rounded bg-gray-800 border border-gray-700 text-sm"
+                  />
+                  <span className="text-gray-500">-</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={localPrefs.workingHoursEnd}
+                    onChange={(e) => updatePref('workingHoursEnd', parseInt(e.target.value) || 18)}
+                    className="w-14 px-2 py-1 rounded bg-gray-800 border border-gray-700 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Detection Settings */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+              <Activity className="w-4 h-4 text-amber-400" />
+              Detection & Notifications
+            </h3>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">Friction Detection</p>
+                <p className="text-xs text-gray-500">Warn when multiple tasks are overdue</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.enableFrictionDetection}
+                onChange={(e) => updatePref('enableFrictionDetection', e.target.checked)}
+                className="rounded w-5 h-5"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">Planner Notifications</p>
+                <p className="text-xs text-gray-500">Show suggestions and reminders</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.notificationsEnabled}
+                onChange={(e) => updatePref('notificationsEnabled', e.target.checked)}
+                className="rounded w-5 h-5"
+              />
+            </label>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between p-4 border-t border-gray-800 bg-gray-900/30">
+          <button
+            onClick={() => setLocalPrefs(DEFAULT_PREFERENCES)}
+            className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm text-gray-400"
+          >
+            Reset to Defaults
+          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onSave(localPrefs)}
+              className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-sm font-medium"
+            >
+              Save Settings
+            </button>
+          </div>
         </div>
       </div>
     </div>
