@@ -3,11 +3,14 @@ import {
   Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
   CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer,
-  Activity, TrendingUp, AlertTriangle, Gauge
+  Activity, TrendingUp, AlertTriangle, Gauge, FileText
 } from 'lucide-react';
 import { GoogleCalendarService } from './lib/googleCalendar';
 import { getDeltaHVState } from './lib/deltaHVEngine';
 import type { DeltaHVState } from './lib/deltaHVEngine';
+import { auditLog, logCheckInCreated, logCheckInCompleted, logDeltaHVCalculated } from './lib/auditLog';
+import { RhythmState, createRhythmStateEngine } from './lib/rhythmStateEngine';
+import type { RhythmStateEngine, RhythmStateInfo } from './lib/rhythmStateEngine';
 
 // Storage safety shim
 declare global {
@@ -166,6 +169,13 @@ export default function App() {
   const [deltaHVState, setDeltaHVState] = useState<DeltaHVState | null>(null);
   const [deltaHVExpanded, setDeltaHVExpanded] = useState(false);
 
+  // Rhythm State Engine (Phase 2)
+  const rhythmEngineRef = useRef<RhythmStateEngine | null>(null);
+  const [rhythmStateInfo, setRhythmStateInfo] = useState<RhythmStateInfo | null>(null);
+
+  // Audit Trail UI State (Phase 4)
+  const [auditTrailOpen, setAuditTrailOpen] = useState(false);
+
   // Load data with safe storage
   useEffect(() => {
     const load = async () => {
@@ -212,11 +222,72 @@ export default function App() {
     }
   }, [checkIns, journals, rhythmProfile, isLoading]);
 
+  // Initialize Audit Log and Rhythm State Engine (Phase 2 & 4)
+  useEffect(() => {
+    const initSystems = async () => {
+      // Initialize audit log
+      await auditLog.initialize();
+
+      // Create rhythm state engine once profile is loaded
+      if (rhythmProfile.setupComplete && !rhythmEngineRef.current) {
+        rhythmEngineRef.current = createRhythmStateEngine(rhythmProfile);
+
+        // Subscribe to state changes
+        rhythmEngineRef.current.subscribe((info) => {
+          setRhythmStateInfo(info);
+        });
+
+        // Start auto-update (every 60 seconds)
+        rhythmEngineRef.current.startAutoUpdate(60000);
+
+        // Initial state calculation
+        const initialInfo = rhythmEngineRef.current.updateState();
+        setRhythmStateInfo(initialInfo);
+      }
+    };
+
+    if (!isLoading) {
+      initSystems();
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (rhythmEngineRef.current) {
+        rhythmEngineRef.current.destroy();
+      }
+    };
+  }, [isLoading, rhythmProfile.setupComplete]);
+
+  // Update rhythm engine when check-ins or profile changes
+  useEffect(() => {
+    if (rhythmEngineRef.current) {
+      rhythmEngineRef.current.updateCheckIns(checkIns);
+      rhythmEngineRef.current.updateProfile(rhythmProfile);
+      // Recalculate state after data update
+      const newInfo = rhythmEngineRef.current.updateState();
+      setRhythmStateInfo(newInfo);
+    }
+  }, [checkIns, rhythmProfile]);
+
   // Calculate DeltaHV metrics as side-effect after every log/state update
   useEffect(() => {
     if (!isLoading && rhythmProfile.setupComplete) {
       const newDeltaHVState = getDeltaHVState(checkIns, journals, rhythmProfile, selectedDate);
       setDeltaHVState(newDeltaHVState);
+
+      // Log ΔHV calculation to audit trail
+      if (newDeltaHVState) {
+        logDeltaHVCalculated(
+          newDeltaHVState.deltaHV,
+          newDeltaHVState.fieldState,
+          {
+            S: newDeltaHVState.symbolicDensity,
+            R: newDeltaHVState.resonanceCoupling,
+            F: newDeltaHVState.frictionCoefficient,
+            H: newDeltaHVState.harmonicStability
+          }
+        );
+      }
     }
   }, [checkIns, journals, rhythmProfile, selectedDate, isLoading]);
 
@@ -402,6 +473,9 @@ export default function App() {
     };
     setCheckIns(prev => [entry, ...prev]);
 
+    // Log to audit trail
+    logCheckInCreated(category, task, isAnchor || false, waveId);
+
     // Auto-sync to Google Calendar
     if (syncEnabled && gcalAuthed) {
       await syncToGoogleCalendar(entry);
@@ -409,10 +483,25 @@ export default function App() {
   };
 
   const markDone = (id: string) => {
+    const checkIn = checkIns.find(c => c.id === id);
+    if (checkIn) {
+      // Log completion to audit trail
+      logCheckInCompleted(checkIn.category, checkIn.task, checkIn.slot, new Date().toISOString());
+    }
     setCheckIns(prev => prev.map(c => c.id === id ? { ...c, done: true, loggedAt: new Date().toISOString() } : c));
   };
 
-  const removeCheckIn = (id: string) => setCheckIns(prev => prev.filter(c => c.id !== id));
+  const removeCheckIn = (id: string) => {
+    const checkIn = checkIns.find(c => c.id === id);
+    if (checkIn) {
+      auditLog.addEntry('CHECKIN_DELETED', 'info', `Deleted: ${checkIn.task}`, {
+        category: checkIn.category,
+        task: checkIn.task,
+        wasCompleted: checkIn.done
+      });
+    }
+    setCheckIns(prev => prev.filter(c => c.id !== id));
+  };
 
   const toggleExpanded = (id: string) => {
     setCheckIns(prev => prev.map(c => c.id === id ? { ...c, expanded: !c.expanded } : c));
@@ -421,6 +510,13 @@ export default function App() {
   const snoozeAnchor = (id: string, minutes: number) => {
     const anchor = checkIns.find(c => c.id === id);
     if (!anchor) return;
+
+    // Log snooze to audit trail
+    auditLog.addEntry('CHECKIN_SNOOZED', 'info', `Snoozed: ${anchor.task} by ${minutes} min`, {
+      task: anchor.task,
+      snoozeMinutes: minutes,
+      originalSlot: anchor.slot
+    });
 
     const newTime = addMinutes(new Date(anchor.slot), minutes);
     scheduleBeat(anchor.category, anchor.task, newTime, anchor.note, anchor.waveId, anchor.isAnchor);
@@ -431,6 +527,7 @@ export default function App() {
     const yesterday = new Date(selectedDate);
     yesterday.setDate(yesterday.getDate() - 1);
 
+    let copiedCount = 0;
     rhythmProfile.waves.forEach(wave => {
       const yAnchor = checkIns.find(
         c => c.isAnchor && c.waveId === wave.id && sameDay(new Date(c.slot), yesterday)
@@ -442,7 +539,17 @@ export default function App() {
       when.setHours(anchorTime.getHours(), anchorTime.getMinutes(), 0, 0);
 
       scheduleBeat('Anchor', yAnchor.task, when, yAnchor.note, wave.id, true);
+      copiedCount++;
     });
+
+    // Log anchors copied
+    if (copiedCount > 0) {
+      auditLog.addEntry('ANCHORS_COPIED', 'success', `Copied ${copiedCount} anchor(s) from yesterday`, {
+        count: copiedCount,
+        fromDate: yesterday.toISOString(),
+        toDate: selectedDate.toISOString()
+      });
+    }
   };
 
   const addJournalEntry = () => {
@@ -458,6 +565,14 @@ export default function App() {
       ...prev,
       [dayKey]: [...(prev[dayKey] || []), entry]
     }));
+
+    // Log journal creation to audit trail
+    auditLog.addEntry('JOURNAL_CREATED', 'success', 'Journal entry created', {
+      wordCount: newJournalContent.trim().split(/\s+/).length,
+      waveId: newJournalWave || 'none',
+      date: dayKey
+    }, { waveId: newJournalWave || undefined });
+
     setNewJournalContent('');
     setNewJournalWave('');
     setNewJournalOpen(false);
@@ -465,6 +580,16 @@ export default function App() {
 
   const deleteJournalEntry = (entryId: string) => {
     const dayKey = toDateInput(selectedDate);
+    const entry = journals[dayKey]?.find(e => e.id === entryId);
+
+    // Log journal deletion to audit trail
+    if (entry) {
+      auditLog.addEntry('JOURNAL_DELETED', 'info', 'Journal entry deleted', {
+        wordCount: entry.content.split(/\s+/).length,
+        date: dayKey
+      });
+    }
+
     setJournals(prev => ({
       ...prev,
       [dayKey]: (prev[dayKey] || []).filter(e => e.id !== entryId)
@@ -646,9 +771,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* Current Wave & Rhythm Score */}
+        {/* Current Wave, Rhythm State & Score */}
         <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-2xl p-6">
           <div className="flex items-center justify-between flex-wrap gap-4">
+            {/* Wave Info */}
             <div className="flex items-center gap-3">
               <Waves className={`w-8 h-8 ${waveColorClasses[getWaveColor(currentWave?.id)].text}`} />
               <div>
@@ -656,11 +782,51 @@ export default function App() {
                 <p className="text-sm text-gray-400">{currentWave?.description || 'Define your waves'}</p>
               </div>
             </div>
+
+            {/* Rhythm State Indicator (Phase 2) */}
+            {rhythmStateInfo && (
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${
+                rhythmStateInfo.state === RhythmState.FOCUS ? 'bg-cyan-950/40 border-cyan-700/50 text-cyan-300' :
+                rhythmStateInfo.state === RhythmState.REFLECTIVE ? 'bg-blue-950/40 border-blue-700/50 text-blue-300' :
+                'bg-purple-950/40 border-purple-700/50 text-purple-300'
+              }`}>
+                <span className="text-xl">{rhythmStateInfo.uiHint.icon}</span>
+                <div>
+                  <p className="text-sm font-medium">{rhythmStateInfo.uiHint.label}</p>
+                  <p className="text-xs opacity-70">{rhythmStateInfo.trigger}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Rhythm Score */}
             <div className="text-center">
               <p className="text-3xl font-bold text-purple-400">{rhythmScore}%</p>
               <p className="text-xs text-gray-500">Rhythm Score</p>
             </div>
           </div>
+
+          {/* Rhythm State Suggestions (collapsible) */}
+          {rhythmStateInfo && (
+            <div className="mt-4 pt-4 border-t border-gray-800/50">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-gray-400">Suggested Actions for {rhythmStateInfo.uiHint.label}</p>
+                <button
+                  onClick={() => setAuditTrailOpen(true)}
+                  className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1"
+                >
+                  <FileText className="w-3 h-3" />
+                  View Audit Trail
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {rhythmStateInfo.suggestedActions.slice(0, 3).map((action, i) => (
+                  <span key={i} className="text-xs px-2 py-1 bg-gray-900/60 rounded-lg text-gray-400">
+                    {action}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* DeltaHV Metrics Panel */}
@@ -1266,6 +1432,11 @@ export default function App() {
 
         {glyphCanvasOpen && (
           <GlyphCanvas onClose={() => setGlyphCanvasOpen(false)} />
+        )}
+
+        {/* Audit Trail Modal (Phase 4) */}
+        {auditTrailOpen && (
+          <AuditTrailModal onClose={() => setAuditTrailOpen(false)} />
         )}
       </div>
     </div>
@@ -1880,6 +2051,185 @@ function GlyphCanvas({ onClose }: { onClose: () => void }) {
         </div>
       </div>
       <canvas ref={canvasRef} className="flex-1 bg-gray-950 touch-none" onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} />
+    </div>
+  );
+}
+
+/**
+ * Audit Trail Modal (Phase 4)
+ * Displays the audit log with filtering and export capabilities
+ */
+function AuditTrailModal({ onClose }: { onClose: () => void }) {
+  const [entries, setEntries] = useState<any[]>([]);
+  const [filter, setFilter] = useState<string>('all');
+  const [stats, setStats] = useState<any>(null);
+
+  useEffect(() => {
+    // Load entries on mount
+    const loadEntries = () => {
+      const allEntries = auditLog.getRecentEntries(100);
+      setEntries(allEntries);
+      setStats(auditLog.getStats());
+    };
+    loadEntries();
+
+    // Subscribe to new entries
+    const unsubscribe = auditLog.subscribe((entry) => {
+      setEntries(prev => [...prev.slice(-99), entry]);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const filteredEntries = filter === 'all'
+    ? entries
+    : entries.filter(e => e.severity === filter || e.action.includes(filter.toUpperCase()));
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'success': return 'text-emerald-400 bg-emerald-950/30';
+      case 'warning': return 'text-amber-400 bg-amber-950/30';
+      case 'error': return 'text-rose-400 bg-rose-950/30';
+      default: return 'text-gray-400 bg-gray-900/30';
+    }
+  };
+
+  const getActionIcon = (action: string) => {
+    if (action.includes('RHYTHM')) return '🌊';
+    if (action.includes('CHECKIN')) return '✅';
+    if (action.includes('JOURNAL')) return '📓';
+    if (action.includes('DELTAHV')) return '⚡';
+    if (action.includes('GCAL')) return '📅';
+    if (action.includes('ANCHOR')) return '⚓';
+    if (action.includes('ERROR')) return '❌';
+    if (action.includes('SYSTEM')) return '⚙️';
+    return '📝';
+  };
+
+  const exportLog = () => {
+    const json = auditLog.exportAsJSON();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit-log-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="w-full max-w-4xl h-[80vh] bg-gray-950 border border-gray-800 rounded-2xl flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-800">
+          <div className="flex items-center gap-3">
+            <FileText className="w-6 h-6 text-purple-400" />
+            <div>
+              <h2 className="text-xl font-light">Audit Trail</h2>
+              <p className="text-xs text-gray-500">
+                {stats ? `${stats.totalEntries} total entries` : 'Loading...'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportLog}
+              className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-sm flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg bg-gray-900/70 border border-gray-800 hover:bg-gray-800"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex items-center gap-2 p-3 border-b border-gray-800 bg-gray-900/30">
+          <span className="text-xs text-gray-400">Filter:</span>
+          {['all', 'success', 'warning', 'error', 'RHYTHM', 'CHECKIN', 'DELTAHV'].map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-2 py-1 rounded text-xs ${
+                filter === f
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+
+        {/* Stats Summary */}
+        {stats && (
+          <div className="flex items-center gap-4 p-3 border-b border-gray-800 bg-gray-900/20 text-xs">
+            <div className="flex items-center gap-1">
+              <span className="text-emerald-400">●</span>
+              <span className="text-gray-400">{stats.bySeverity.success || 0} success</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-amber-400">●</span>
+              <span className="text-gray-400">{stats.bySeverity.warning || 0} warning</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-rose-400">●</span>
+              <span className="text-gray-400">{stats.bySeverity.error || 0} error</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-gray-400">●</span>
+              <span className="text-gray-400">{stats.bySeverity.info || 0} info</span>
+            </div>
+          </div>
+        )}
+
+        {/* Log Entries */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {filteredEntries.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">No entries match the current filter</p>
+          ) : (
+            [...filteredEntries].reverse().map((entry) => (
+              <div
+                key={entry.id}
+                className={`rounded-lg p-3 border border-gray-800 ${getSeverityColor(entry.severity)}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-lg">{getActionIcon(entry.action)}</span>
+                    <div>
+                      <p className="text-sm font-medium">{entry.message}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {entry.action} • {new Date(entry.timestamp).toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded ${
+                    entry.severity === 'success' ? 'bg-emerald-900/50 text-emerald-300' :
+                    entry.severity === 'warning' ? 'bg-amber-900/50 text-amber-300' :
+                    entry.severity === 'error' ? 'bg-rose-900/50 text-rose-300' :
+                    'bg-gray-800 text-gray-400'
+                  }`}>
+                    {entry.severity}
+                  </span>
+                </div>
+                {entry.details && Object.keys(entry.details).length > 0 && (
+                  <div className="mt-2 text-xs text-gray-500 bg-black/20 rounded p-2 font-mono">
+                    {JSON.stringify(entry.details, null, 2).substring(0, 200)}
+                    {JSON.stringify(entry.details).length > 200 && '...'}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   );
 }
