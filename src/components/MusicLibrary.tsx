@@ -239,19 +239,30 @@ export function MusicLibrary({
       const allTracks = await musicLibrary.getAllTracks();
       setTracks(allTracks);
       setIsLoading(false);
+
+      // Sync initial playback state
+      setPlaybackState(musicLibrary.getPlaybackState());
     };
 
     init();
 
-    // Subscribe to changes
+    // Subscribe to track library changes
     const unsubscribe = musicLibrary.subscribe(async () => {
       const allTracks = await musicLibrary.getAllTracks();
       setTracks(allTracks);
       setPlaybackState(musicLibrary.getPlaybackState());
     });
 
+    // CRITICAL: Subscribe to playback state changes to sync with other components
+    // This ensures when StoryMusicPlayer plays/pauses, our UI updates immediately
+    const unsubscribePlayback = musicLibrary.subscribeToPlayback(() => {
+      // Update playback state when any component changes playback
+      setPlaybackState(musicLibrary.getPlaybackState());
+    });
+
     return () => {
       unsubscribe();
+      unsubscribePlayback();
       if (playbackIntervalRef.current) {
         clearInterval(playbackIntervalRef.current);
       }
@@ -418,7 +429,15 @@ export function MusicLibrary({
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => playbackState.isPlaying ? musicLibrary.pausePlayback() : musicLibrary.resumePlayback()}
+                onClick={async () => {
+                  // Check actual state to avoid race conditions with other components
+                  const actuallyPlaying = musicLibrary.isCurrentlyPlaying();
+                  if (actuallyPlaying) {
+                    musicLibrary.pausePlayback();
+                  } else {
+                    await musicLibrary.resumePlayback();
+                  }
+                }}
                 className="p-2 rounded-full bg-purple-600 hover:bg-purple-500"
               >
                 {playbackState.isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
