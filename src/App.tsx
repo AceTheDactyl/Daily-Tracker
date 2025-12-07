@@ -3,7 +3,7 @@ import {
   Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
   CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer,
-  Activity, TrendingUp, AlertTriangle, Gauge, FileText, Settings, Bell, BarChart3, Music
+  Activity, TrendingUp, AlertTriangle, Gauge, FileText, Settings, Bell, BarChart3, Music, User
 } from 'lucide-react';
 import { GoogleCalendarService } from './lib/googleCalendar';
 import { getDeltaHVState } from './lib/deltaHVEngine';
@@ -18,6 +18,8 @@ import type { NotificationPreferences, PermissionStatus } from './lib/notificati
 import { musicLibrary, EMOTIONAL_CATEGORIES, type EmotionalCategoryId } from './lib/musicLibrary';
 import { AnalyticsPage } from './components/AnalyticsPage';
 import { MusicLibrary } from './components/MusicLibrary';
+import { UserProfilePage } from './components/UserProfilePage';
+import { RoadmapView } from './components/RoadmapView';
 
 // Storage safety shim
 declare global {
@@ -201,7 +203,8 @@ export default function App() {
   const [notificationSettingsOpen, setNotificationSettingsOpen] = useState(false);
 
   // Navigation & Views
-  const [currentView, setCurrentView] = useState<'dashboard' | 'analytics'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'analytics' | 'profile' | 'roadmap'>('dashboard');
+  const [currentRoadmapDomain, setCurrentRoadmapDomain] = useState<string>('');
 
   // Music Library
   const [musicLibraryOpen, setMusicLibraryOpen] = useState(false);
@@ -860,6 +863,37 @@ export default function App() {
     );
   }
 
+  // Render User Profile Page when navigated
+  if (currentView === 'profile') {
+    return (
+      <UserProfilePage
+        onBack={() => setCurrentView('dashboard')}
+        onNavigateToRoadmap={(domain) => {
+          setCurrentRoadmapDomain(domain);
+          setCurrentView('roadmap');
+        }}
+      />
+    );
+  }
+
+  // Render Roadmap View when navigated
+  if (currentView === 'roadmap' && currentRoadmapDomain) {
+    return (
+      <RoadmapView
+        domainId={currentRoadmapDomain}
+        onBack={() => setCurrentView('profile')}
+        onScheduleBeat={(category, context) => {
+          // Pre-fill the mini scheduler with roadmap context
+          setMiniCategory(category);
+          setMiniNote(`Roadmap: ${context}`);
+          setMiniTime(toTimeInput(addMinutes(new Date(), 30)));
+          setMiniOpen(true);
+          setCurrentView('dashboard');
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-blue-950 text-gray-100 p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -995,6 +1029,16 @@ export default function App() {
                   <span>{EMOTIONAL_CATEGORIES[dailyMusicEmotion].name}</span>
                 </span>
               ) : 'Music'}
+            </button>
+
+            {/* User Profile Button */}
+            <button
+              onClick={() => setCurrentView('profile')}
+              className="px-3 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 text-sm flex items-center gap-2"
+              title="User Profile & Roadmap"
+            >
+              <User className="w-4 h-4" />
+              Profile
             </button>
           </div>
           <div className="text-sm text-gray-500 h-5">
