@@ -3,7 +3,7 @@ import {
   Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
   CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer,
-  Activity, TrendingUp, AlertTriangle, Gauge, FileText, Settings, Bell, BarChart3
+  Activity, TrendingUp, AlertTriangle, Gauge, FileText, Settings, Bell, BarChart3, Music
 } from 'lucide-react';
 import { GoogleCalendarService } from './lib/googleCalendar';
 import { getDeltaHVState } from './lib/deltaHVEngine';
@@ -15,7 +15,9 @@ import { createRhythmPlanner, DEFAULT_PREFERENCES } from './lib/rhythmPlanner';
 import type { RhythmPlanner, PlannerSuggestion, PlannerPreferences, CalendarServiceInterface } from './lib/rhythmPlanner';
 import { notificationService } from './lib/notificationService';
 import type { NotificationPreferences, PermissionStatus } from './lib/notificationService';
-import { AnalyticsDashboard } from './components/AnalyticsDashboard';
+import { musicLibrary, EMOTIONAL_CATEGORIES, type EmotionalCategoryId } from './lib/musicLibrary';
+import { AnalyticsPage } from './components/AnalyticsPage';
+import { MusicLibrary } from './components/MusicLibrary';
 
 // Storage safety shim
 declare global {
@@ -192,7 +194,13 @@ export default function App() {
   const [notificationPermission, setNotificationPermission] = useState<PermissionStatus>(notificationService.getPermissionStatus());
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreferences>(notificationService.getPreferences());
   const [notificationSettingsOpen, setNotificationSettingsOpen] = useState(false);
-  const [analyticsOpen, setAnalyticsOpen] = useState(false);
+
+  // Navigation & Views
+  const [currentView, setCurrentView] = useState<'dashboard' | 'analytics'>('dashboard');
+
+  // Music Library
+  const [musicLibraryOpen, setMusicLibraryOpen] = useState(false);
+  const [dailyMusicEmotion, setDailyMusicEmotion] = useState<EmotionalCategoryId | null>(null);
 
   // Load data with safe storage
   useEffect(() => {
@@ -240,11 +248,18 @@ export default function App() {
     }
   }, [checkIns, journals, rhythmProfile, isLoading]);
 
-  // Initialize Audit Log, Rhythm State Engine, and Planner (Phase 2, 3 & 4)
+  // Initialize Audit Log, Rhythm State Engine, Planner, and Music Library (Phase 2, 3, 4 & 5)
   useEffect(() => {
     const initSystems = async () => {
       // Initialize audit log
       await auditLog.initialize();
+
+      // Initialize music library and load daily preference
+      await musicLibrary.initialize();
+      const dailyPref = await musicLibrary.getTodayPreference();
+      if (dailyPref) {
+        setDailyMusicEmotion(dailyPref.selectedCategoryId);
+      }
 
       // Create rhythm state engine once profile is loaded
       if (rhythmProfile.setupComplete && !rhythmEngineRef.current) {
@@ -806,6 +821,17 @@ export default function App() {
     );
   }
 
+  // Render Analytics Page when navigated
+  if (currentView === 'analytics') {
+    return (
+      <AnalyticsPage
+        checkIns={checkIns}
+        waves={rhythmProfile.waves}
+        onBack={() => setCurrentView('dashboard')}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-blue-950 text-gray-100 p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -920,12 +946,27 @@ export default function App() {
 
             {/* Analytics Button */}
             <button
-              onClick={() => setAnalyticsOpen(true)}
+              onClick={() => setCurrentView('analytics')}
               className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-sm flex items-center gap-2"
               title="View Analytics Dashboard"
             >
               <BarChart3 className="w-4 h-4" />
               Analytics
+            </button>
+
+            {/* Music Library Button */}
+            <button
+              onClick={() => setMusicLibraryOpen(true)}
+              className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-sm flex items-center gap-2"
+              title={dailyMusicEmotion ? `Today: ${EMOTIONAL_CATEGORIES[dailyMusicEmotion].name}` : 'Music Library'}
+            >
+              <Music className="w-4 h-4" />
+              {dailyMusicEmotion ? (
+                <span className="flex items-center gap-1">
+                  <span>{EMOTIONAL_CATEGORIES[dailyMusicEmotion].icon}</span>
+                  <span>{EMOTIONAL_CATEGORIES[dailyMusicEmotion].name}</span>
+                </span>
+              ) : 'Music'}
             </button>
           </div>
           <div className="text-sm text-gray-500 h-5">
@@ -1771,12 +1812,14 @@ export default function App() {
           />
         )}
 
-        {/* Analytics Dashboard Modal */}
-        {analyticsOpen && (
-          <AnalyticsDashboard
-            checkIns={checkIns}
-            waves={rhythmProfile.waves}
-            onClose={() => setAnalyticsOpen(false)}
+        {/* Music Library Modal */}
+        {musicLibraryOpen && (
+          <MusicLibrary
+            onClose={() => setMusicLibraryOpen(false)}
+            onSelectTrack={(_track, emotion) => {
+              setDailyMusicEmotion(emotion);
+              setMusicLibraryOpen(false);
+            }}
           />
         )}
       </div>

@@ -26,7 +26,9 @@ export type NotificationType =
   | 'friction_warning'
   | 'auto_scheduled'
   | 'rhythm_state_change'
-  | 'daily_summary';
+  | 'daily_summary'
+  | 'music_reminder'
+  | 'music_session_start';
 
 /**
  * Notification payload
@@ -86,6 +88,7 @@ export interface NotificationPreferences {
   autoScheduledAlerts: boolean;
   rhythmStateChanges: boolean;
   dailySummary: boolean;
+  musicReminders: boolean;
   quietHoursEnabled: boolean;
   quietHoursStart: number; // 24h format
   quietHoursEnd: number;
@@ -102,6 +105,7 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
   autoScheduledAlerts: true,
   rhythmStateChanges: false, // Off by default to avoid spam
   dailySummary: true,
+  musicReminders: true,
   quietHoursEnabled: false,
   quietHoursStart: 22,
   quietHoursEnd: 7,
@@ -162,7 +166,9 @@ const NOTIFICATION_ICONS: Record<NotificationType, string> = {
   friction_warning: '⚡',
   auto_scheduled: '📅',
   rhythm_state_change: '🌊',
-  daily_summary: '📊'
+  daily_summary: '📊',
+  music_reminder: '🎵',
+  music_session_start: '🎶'
 };
 
 /**
@@ -360,6 +366,9 @@ class NotificationService {
         return this.preferences.rhythmStateChanges;
       case 'daily_summary':
         return this.preferences.dailySummary;
+      case 'music_reminder':
+      case 'music_session_start':
+        return this.preferences.musicReminders;
       default:
         return true;
     }
@@ -652,6 +661,40 @@ class NotificationService {
       body: `${stats.completed}/${stats.total} tasks (${completionRate}%) | Score: ${stats.rhythmScore}% | ΔHV: ${stats.deltaHV}`,
       tag: 'daily-summary',
       data: { action: 'view_summary', stats }
+    });
+  }
+
+  /**
+   * Send music selection reminder
+   * Triggered when a meditation beat is scheduled or when daily music not selected
+   */
+  sendMusicReminder(beatName?: string, scheduledTime?: string): Promise<string | null> {
+    const body = beatName
+      ? `Select your emotional music for "${beatName}"${scheduledTime ? ` at ${scheduledTime}` : ''}`
+      : 'Choose your emotional music focus for today\'s meditation sessions';
+
+    return this.show({
+      type: 'music_reminder',
+      title: `${NOTIFICATION_ICONS.music_reminder} Music Meditation`,
+      body,
+      tag: 'music-reminder',
+      requireInteraction: true,
+      data: { action: 'open_music_library', beatName, scheduledTime }
+    });
+  }
+
+  /**
+   * Send music session starting notification
+   * Triggered when a meditation beat with music is about to start
+   */
+  sendMusicSessionStart(trackName: string, emotionCategory: string, minutesUntil: number): Promise<string | null> {
+    return this.show({
+      type: 'music_session_start',
+      title: `${NOTIFICATION_ICONS.music_session_start} Music Session Starting`,
+      body: `"${trackName}" (${emotionCategory}) starts in ${minutesUntil} minutes`,
+      tag: 'music-session',
+      requireInteraction: true,
+      data: { action: 'start_music_session', trackName, emotionCategory }
     });
   }
 
