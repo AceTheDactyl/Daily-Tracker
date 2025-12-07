@@ -55,19 +55,17 @@ export const RoadmapView: React.FC<RoadmapViewProps> = ({
     const loadedRoadmap = roadmapEngine.getRoadmap(domainId);
     setRoadmap(loadedRoadmap || null);
 
-    // Load beat roadmap questions for this domain
-    const beatRoadmap = loadedProfile.beatRoadmaps.find(br =>
-      getCategoriesForDomain(domainId).includes(br.category)
-    );
-
-    if (beatRoadmap) {
+    // Load domain question answers (new system)
+    const domainData = loadedProfile.domainAnswers?.[domainId];
+    if (domainData) {
       const answers: Record<string, string> = {};
-      beatRoadmap.questions.forEach(q => {
-        if (q.answer) answers[q.id] = q.answer;
-      });
+      if (domainData.improvement) answers[`${domainId}-improvement`] = domainData.improvement;
+      if (domainData.obstacle) answers[`${domainId}-obstacle`] = domainData.obstacle;
+      if (domainData.emotion) answers[`${domainId}-emotion`] = domainData.emotion;
+      if (domainData.vision) answers[`${domainId}-vision`] = domainData.vision;
       setQuestionAnswers(answers);
-      setCurrentFocus(beatRoadmap.currentFocus);
-      setTargetOutcome(beatRoadmap.targetOutcome);
+      setCurrentFocus(domainData.currentFocus || '');
+      setTargetOutcome(domainData.targetOutcome || '');
     }
   };
 
@@ -109,21 +107,29 @@ export const RoadmapView: React.FC<RoadmapViewProps> = ({
   const handleSaveQuestions = async () => {
     if (!profile) return;
 
-    const categories = getCategoriesForDomain(domainId);
-    for (const category of categories) {
-      const beatRoadmap = profile.beatRoadmaps.find(br => br.category === category);
-      if (beatRoadmap) {
-        // Update answers
-        for (const [qId, answer] of Object.entries(questionAnswers)) {
-          await userProfileService.answerRoadmapQuestion(category, qId, answer);
-        }
-        // Update focus and outcome
-        await userProfileService.updateBeatRoadmap(category, {
-          currentFocus,
-          targetOutcome,
-        });
+    // Extract answers for this domain
+    const domainAnswersToSave: {
+      improvement?: string;
+      obstacle?: string;
+      emotion?: string;
+      vision?: string;
+      currentFocus?: string;
+      targetOutcome?: string;
+    } = {
+      currentFocus,
+      targetOutcome,
+    };
+
+    // Extract question answers
+    for (const [key, answer] of Object.entries(questionAnswers)) {
+      if (key.startsWith(`${domainId}-`)) {
+        const field = key.replace(`${domainId}-`, '') as 'improvement' | 'obstacle' | 'emotion' | 'vision';
+        domainAnswersToSave[field] = answer;
       }
     }
+
+    // Save using the new domain answers method
+    await userProfileService.saveDomainAnswers(domainId, domainAnswersToSave);
 
     setEditingQuestions(false);
     const updated = userProfileService.getProfile();

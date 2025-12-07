@@ -28,6 +28,10 @@ import {
   Sun,
   Moon,
   Target,
+  Plus,
+  Check,
+  ChevronDown,
+  FolderPlus,
 } from 'lucide-react';
 import type { DeltaHVState } from '../lib/deltaHVEngine';
 import type { MusicTrack, EmotionalCategoryId } from '../lib/musicLibrary';
@@ -93,6 +97,14 @@ export const DJTab: React.FC<DJTabProps> = ({ deltaHV, onClose }) => {
   const [selectedMood, setSelectedMood] = useState<string | null>(null);
   const [moodIntensity, setMoodIntensity] = useState(50);
   const [, setQueue] = useState<string[]>([]);
+
+  // Playlist management state
+  const [addToPlaylistTrack, setAddToPlaylistTrack] = useState<MusicTrack | null>(null);
+  const [showPlaylistDropdown, setShowPlaylistDropdown] = useState(false);
+  const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [newPlaylistEmoji, setNewPlaylistEmoji] = useState('🎵');
+  const [selectedPlaylistForEdit, setSelectedPlaylistForEdit] = useState<Playlist | null>(null);
 
   // Load tracks and playlists
   useEffect(() => {
@@ -202,6 +214,43 @@ export const DJTab: React.FC<DJTabProps> = ({ deltaHV, onClose }) => {
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
+  // Add track to playlist
+  const addTrackToPlaylist = useCallback((playlistId: string, track: MusicTrack) => {
+    storyShuffleEngine.addToPlaylist(playlistId, track.id);
+    setAddToPlaylistTrack(null);
+    setShowPlaylistDropdown(false);
+  }, []);
+
+  // Create new playlist with optional initial track
+  const createNewPlaylist = useCallback((initialTrack?: MusicTrack) => {
+    if (!newPlaylistName.trim()) return;
+    const playlist = storyShuffleEngine.createPlaylist(newPlaylistName.trim(), undefined, newPlaylistEmoji);
+    if (initialTrack) {
+      storyShuffleEngine.addToPlaylist(playlist.id, initialTrack.id);
+    }
+    setNewPlaylistName('');
+    setNewPlaylistEmoji('🎵');
+    setShowCreatePlaylist(false);
+    setAddToPlaylistTrack(null);
+    setShowPlaylistDropdown(false);
+  }, [newPlaylistName, newPlaylistEmoji]);
+
+  // Remove track from playlist
+  const removeTrackFromPlaylist = useCallback((playlistId: string, trackId: string) => {
+    storyShuffleEngine.removeFromPlaylist(playlistId, trackId);
+  }, []);
+
+  // Check if track is in playlist
+  const isTrackInPlaylist = useCallback((playlistId: string, trackId: string): boolean => {
+    const playlist = playlists.find(p => p.id === playlistId);
+    return playlist?.trackIds.includes(trackId) || false;
+  }, [playlists]);
+
+  // Get user playlists (non-system)
+  const userPlaylists = useMemo(() => {
+    return playlists.filter(p => !p.isSystem);
+  }, [playlists]);
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex flex-col">
@@ -417,7 +466,7 @@ export const DJTab: React.FC<DJTabProps> = ({ deltaHV, onClose }) => {
           </div>
         </div>
 
-        {/* Mood Tracks List */}
+        {/* Mood Tracks List with Add to Playlist */}
         {selectedMood && moodTracks.length > 0 && (
           <div>
             <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider mb-3">
@@ -425,28 +474,82 @@ export const DJTab: React.FC<DJTabProps> = ({ deltaHV, onClose }) => {
             </h3>
             <div className="space-y-1 max-h-64 overflow-y-auto">
               {moodTracks.slice(0, 20).map(track => (
-                <button
+                <div
                   key={track.id}
-                  onClick={() => playTrack(track)}
-                  className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors text-left ${
+                  className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${
                     currentTrack?.id === track.id
                       ? 'bg-purple-900/30 border border-purple-500/30'
                       : 'hover:bg-gray-800/50'
                   }`}
                 >
-                  <span className="text-lg">{EMOTIONAL_CATEGORIES[track.categoryId]?.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-white truncate">{track.name}</div>
-                    <div className="text-xs text-gray-500">{formatDuration(track.duration)}</div>
-                  </div>
-                  {currentTrack?.id === track.id && isPlaying && (
-                    <div className="flex gap-0.5">
-                      <div className="w-1 h-4 bg-purple-400 rounded-full animate-pulse" />
-                      <div className="w-1 h-4 bg-purple-400 rounded-full animate-pulse delay-75" />
-                      <div className="w-1 h-4 bg-purple-400 rounded-full animate-pulse delay-150" />
+                  <button
+                    onClick={() => playTrack(track)}
+                    className="flex items-center gap-3 flex-1 text-left"
+                  >
+                    <span className="text-lg">{EMOTIONAL_CATEGORIES[track.categoryId]?.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-white truncate">{track.name}</div>
+                      <div className="text-xs text-gray-500">{formatDuration(track.duration)}</div>
                     </div>
-                  )}
-                </button>
+                    {currentTrack?.id === track.id && isPlaying && (
+                      <div className="flex gap-0.5">
+                        <div className="w-1 h-4 bg-purple-400 rounded-full animate-pulse" />
+                        <div className="w-1 h-4 bg-purple-400 rounded-full animate-pulse delay-75" />
+                        <div className="w-1 h-4 bg-purple-400 rounded-full animate-pulse delay-150" />
+                      </div>
+                    )}
+                  </button>
+                  {/* Add to Playlist Button */}
+                  <div className="relative">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAddToPlaylistTrack(addToPlaylistTrack?.id === track.id ? null : track);
+                        setShowPlaylistDropdown(addToPlaylistTrack?.id !== track.id);
+                      }}
+                      className="p-1.5 rounded-lg bg-gray-800/50 hover:bg-gray-700/50 transition-colors"
+                      title="Add to playlist"
+                    >
+                      <Plus className="w-4 h-4 text-gray-400" />
+                    </button>
+                    {/* Playlist Dropdown */}
+                    {addToPlaylistTrack?.id === track.id && showPlaylistDropdown && (
+                      <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-gray-900 border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+                        <div className="p-2 border-b border-gray-800">
+                          <div className="text-xs text-gray-400 mb-2">Add to playlist:</div>
+                          {userPlaylists.length > 0 ? (
+                            <div className="space-y-1 max-h-32 overflow-y-auto">
+                              {userPlaylists.map(playlist => (
+                                <button
+                                  key={playlist.id}
+                                  onClick={() => addTrackToPlaylist(playlist.id, track)}
+                                  className="w-full flex items-center gap-2 p-2 rounded hover:bg-gray-800 transition-colors text-left"
+                                >
+                                  <span>{playlist.coverEmoji}</span>
+                                  <span className="text-sm text-white truncate flex-1">{playlist.name}</span>
+                                  {isTrackInPlaylist(playlist.id, track.id) && (
+                                    <Check className="w-3 h-3 text-green-400" />
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-500 py-2">No custom playlists yet</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setShowCreatePlaylist(true);
+                          }}
+                          className="w-full flex items-center gap-2 p-2 hover:bg-gray-800 transition-colors text-left"
+                        >
+                          <FolderPlus className="w-4 h-4 text-cyan-400" />
+                          <span className="text-sm text-cyan-300">Create New Playlist</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -459,7 +562,179 @@ export const DJTab: React.FC<DJTabProps> = ({ deltaHV, onClose }) => {
             <p className="text-sm">Add music to start mixing</p>
           </div>
         )}
+
+        {/* Playlist Management Section */}
+        <div className="mt-6 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider flex items-center gap-2">
+              <FolderPlus className="w-4 h-4" />
+              Manage Your Playlists
+            </h3>
+            <button
+              onClick={() => setShowCreatePlaylist(true)}
+              className="flex items-center gap-1 px-3 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 rounded-lg text-sm transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New Playlist
+            </button>
+          </div>
+
+          {userPlaylists.length > 0 ? (
+            <div className="space-y-2">
+              {userPlaylists.map(playlist => (
+                <div
+                  key={playlist.id}
+                  className={`p-3 rounded-xl border transition-colors ${
+                    selectedPlaylistForEdit?.id === playlist.id
+                      ? 'bg-purple-900/30 border-purple-500/30'
+                      : 'bg-gray-900/50 border-gray-800 hover:border-gray-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{playlist.coverEmoji}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-white">{playlist.name}</div>
+                      <div className="text-xs text-gray-500">{playlist.trackIds.length} tracks</div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedPlaylistForEdit(
+                        selectedPlaylistForEdit?.id === playlist.id ? null : playlist
+                      )}
+                      className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
+                    >
+                      <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${
+                        selectedPlaylistForEdit?.id === playlist.id ? 'rotate-180' : ''
+                      }`} />
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (playlist.trackIds.length > 0) {
+                          const firstTrack = tracks.find(t => t.id === playlist.trackIds[0]);
+                          if (firstTrack) {
+                            setQueue(playlist.trackIds);
+                            await playTrack(firstTrack);
+                          }
+                        }
+                      }}
+                      className="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 transition-colors"
+                    >
+                      <Play className="w-4 h-4 text-purple-300" />
+                    </button>
+                  </div>
+
+                  {/* Expanded Playlist View */}
+                  {selectedPlaylistForEdit?.id === playlist.id && (
+                    <div className="mt-3 pt-3 border-t border-gray-800">
+                      {playlist.trackIds.length > 0 ? (
+                        <div className="space-y-1 max-h-40 overflow-y-auto">
+                          {playlist.trackIds.map((trackId, idx) => {
+                            const track = tracks.find(t => t.id === trackId);
+                            if (!track) return null;
+                            return (
+                              <div
+                                key={trackId}
+                                className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-800/50"
+                              >
+                                <span className="text-xs text-gray-500 w-5">{idx + 1}</span>
+                                <span className="text-sm">{EMOTIONAL_CATEGORIES[track.categoryId]?.icon}</span>
+                                <span className="text-sm text-white flex-1 truncate">{track.name}</span>
+                                <button
+                                  onClick={() => removeTrackFromPlaylist(playlist.id, trackId)}
+                                  className="p-1 rounded hover:bg-red-500/20 transition-colors"
+                                  title="Remove from playlist"
+                                >
+                                  <X className="w-3 h-3 text-red-400" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500 text-center py-2">
+                          No tracks yet. Add songs from the track list above.
+                        </p>
+                      )}
+                      <button
+                        onClick={() => storyShuffleEngine.deletePlaylist(playlist.id)}
+                        className="mt-2 w-full py-1.5 text-xs text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                      >
+                        Delete Playlist
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6 bg-gray-900/30 rounded-xl border border-gray-800">
+              <ListMusic className="w-8 h-8 mx-auto mb-2 text-gray-600" />
+              <p className="text-sm text-gray-500">No custom playlists yet</p>
+              <p className="text-xs text-gray-600 mt-1">Create one to start curating your music</p>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Create Playlist Modal */}
+      {showCreatePlaylist && (
+        <div className="fixed inset-0 bg-black/80 z-60 flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-md p-6">
+            <h3 className="text-lg font-medium text-white mb-4">Create New Playlist</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-gray-400 block mb-2">Playlist Name</label>
+                <input
+                  type="text"
+                  value={newPlaylistName}
+                  onChange={(e) => setNewPlaylistName(e.target.value)}
+                  placeholder="My awesome playlist..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:border-purple-500 focus:outline-none"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-400 block mb-2">Choose an Emoji</label>
+                <div className="flex gap-2 flex-wrap">
+                  {['🎵', '🎶', '🎸', '🎹', '🎤', '🎧', '💜', '🌙', '☀️', '⚡', '🔥', '🌊', '🌈', '✨', '💫', '🎯'].map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => setNewPlaylistEmoji(emoji)}
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-all ${
+                        newPlaylistEmoji === emoji
+                          ? 'bg-purple-600/30 border-2 border-purple-400'
+                          : 'bg-gray-800 border border-gray-700 hover:border-gray-600'
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowCreatePlaylist(false);
+                  setNewPlaylistName('');
+                }}
+                className="flex-1 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => createNewPlaylist(addToPlaylistTrack || undefined)}
+                disabled={!newPlaylistName.trim()}
+                className="flex-1 px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Create Playlist
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

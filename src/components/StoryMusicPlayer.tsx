@@ -90,6 +90,9 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
   // Play start time for skip tracking
   const [playStartTime, setPlayStartTime] = useState<number>(0);
 
+  // Track if we should auto-play next (to handle track ending)
+  const [wasPlayingBeforeEnd, setWasPlayingBeforeEnd] = useState(false);
+
   // Initialize
   useEffect(() => {
     const init = async () => {
@@ -130,8 +133,14 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
 
     // Subscribe to playback state changes - CRITICAL for play/pause sync
     const unsubPlayback = musicLibrary.subscribeToPlayback((state) => {
+      const wasPlaying = isPlaying;
       setIsPlaying(state.isPlaying);
-      // If track stopped completely, keep the current track displayed but show paused state
+
+      // Detect track ended (was playing, now not playing)
+      // This will trigger auto-play of next track if repeat mode allows
+      if (wasPlaying && !state.isPlaying) {
+        setWasPlayingBeforeEnd(true);
+      }
     });
 
     const unsubShuffle = storyShuffleEngine.subscribe(() => {
@@ -173,6 +182,48 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
       storyShuffleEngine.generateHilbertShuffle(tracks, deltaHV).then(setShuffleQueue);
     }
   }, [deltaHV?.fieldState, tracks.length, isShuffled]);
+
+  // Auto-play next track when current track ends
+  useEffect(() => {
+    if (!wasPlayingBeforeEnd || !currentTrack) return;
+
+    // Reset the flag
+    setWasPlayingBeforeEnd(false);
+
+    // Record that track completed (not skipped)
+    const listenedTime = (Date.now() - playStartTime) / 1000;
+    storyShuffleEngine.recordPlayEvent(
+      currentTrack,
+      listenedTime,
+      false, // was NOT skipped - played through
+      deltaHV,
+      'auto_next'
+    );
+
+    // Handle repeat modes
+    if (repeatMode === 'one') {
+      // Repeat the same track
+      playTrack(currentTrack);
+      return;
+    }
+
+    // Get next track based on shuffle state
+    const nextTrackId = storyShuffleEngine.getNextTrack();
+
+    if (nextTrackId) {
+      const nextTrack = tracks.find(t => t.id === nextTrackId);
+      if (nextTrack) {
+        playTrack(nextTrack);
+      }
+    } else if (repeatMode === 'all' && shuffleQueue.length > 0) {
+      // Loop back to start of queue
+      const firstTrack = tracks.find(t => t.id === shuffleQueue[0]);
+      if (firstTrack) {
+        playTrack(firstTrack);
+      }
+    }
+    // If repeatMode === 'off' and no more tracks, just stop (do nothing)
+  }, [wasPlayingBeforeEnd, currentTrack, repeatMode, tracks, shuffleQueue, deltaHV, playStartTime, playTrack]);
 
   // Play track - musicLibrary handles stopping any current playback
   const playTrack = useCallback(async (track: MusicTrack) => {
@@ -218,11 +269,38 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
     }
 
     // Get next track from shuffle queue
-    const nextTrackId = storyShuffleEngine.getNextTrack();
+    let nextTrackId = storyShuffleEngine.getNextTrack();
+
+    // If no next track from queue, try to generate a new shuffle or pick randomly
+    if (!nextTrackId && tracks.length > 0) {
+      // Generate a new shuffle queue if empty
+      const newQueue = await storyShuffleEngine.generateHilbertShuffle(tracks, deltaHV);
+      setShuffleQueue(newQueue);
+
+      // Get the first track from the new queue (or second if current track is first)
+      if (newQueue.length > 0) {
+        const currentIndex = currentTrack ? newQueue.indexOf(currentTrack.id) : -1;
+        if (currentIndex >= 0 && currentIndex < newQueue.length - 1) {
+          nextTrackId = newQueue[currentIndex + 1];
+        } else {
+          nextTrackId = newQueue[0];
+        }
+      }
+    }
+
     if (nextTrackId) {
       const nextTrack = tracks.find(t => t.id === nextTrackId);
       if (nextTrack) {
         await playTrack(nextTrack);
+      }
+    } else if (tracks.length > 0) {
+      // Fallback: just pick a random track that's not the current one
+      const availableTracks = currentTrack
+        ? tracks.filter(t => t.id !== currentTrack.id)
+        : tracks;
+      if (availableTracks.length > 0) {
+        const randomTrack = availableTracks[Math.floor(Math.random() * availableTracks.length)];
+        await playTrack(randomTrack);
       }
     }
   }, [currentTrack, playStartTime, deltaHV, tracks, playTrack]);
@@ -260,8 +338,18 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
       if (firstTrack) {
         await playTrack(firstTrack);
       }
+    } else if (tracks.length > 0) {
+      // No shuffle queue - generate one and start playing
+      const newQueue = await storyShuffleEngine.generateHilbertShuffle(tracks, deltaHV);
+      setShuffleQueue(newQueue);
+      if (newQueue.length > 0) {
+        const firstTrack = tracks.find(t => t.id === newQueue[0]);
+        if (firstTrack) {
+          await playTrack(firstTrack);
+        }
+      }
     }
-  }, [currentTrack, shuffleQueue, tracks, playTrack]);
+  }, [currentTrack, shuffleQueue, tracks, playTrack, deltaHV]);
 
   // Reshuffle with new Hilbert curve
   const handleReshuffle = useCallback(async () => {

@@ -60,6 +60,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [showHabitModal, setShowHabitModal] = useState(false);
   const [editingGoal, setEditingGoal] = useState<UserGoals | null>(null);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
 
   useEffect(() => {
     initializeProfile();
@@ -122,7 +123,10 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
               <span>Back</span>
             </button>
             <h1 className="text-xl font-light text-white">Profile</h1>
-            <button className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors">
+            <button
+              onClick={() => setShowSettingsPanel(true)}
+              className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
+            >
               <Settings className="w-5 h-5" />
             </button>
           </div>
@@ -321,6 +325,228 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
           }}
         />
       )}
+
+      {/* Settings Panel */}
+      {showSettingsPanel && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm">
+          <div className="h-full w-full max-w-lg ml-auto bg-gray-950 border-l border-gray-800 overflow-y-auto">
+            {/* Settings Header */}
+            <div className="sticky top-0 bg-gray-950/95 backdrop-blur border-b border-gray-800 p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-light text-white flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-cyan-400" />
+                  Settings
+                </h2>
+                <button
+                  onClick={() => setShowSettingsPanel(false)}
+                  className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-6">
+              {/* Profile Settings */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Profile</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm text-gray-400 block mb-2">Display Name</label>
+                    <input
+                      type="text"
+                      value={profile.displayName}
+                      onChange={async (e) => {
+                        await userProfileService.updateProfile({ displayName: e.target.value });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:border-purple-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-400 block mb-2">Avatar Glyph</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {['🌀', '✨', '🔮', '🌟', '💫', '🦋', '🌊', '⚡', '🔥', '🌈', '🌙', '☀️'].map(glyph => (
+                        <button
+                          key={glyph}
+                          onClick={async () => {
+                            await userProfileService.updateProfile({ avatarGlyph: glyph });
+                            setProfile(userProfileService.getProfile()!);
+                          }}
+                          className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-all ${
+                            profile.avatarGlyph === glyph
+                              ? 'bg-purple-600/30 border-2 border-purple-400'
+                              : 'bg-gray-800 border border-gray-700 hover:border-gray-600'
+                          }`}
+                        >
+                          {glyph}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Display Preferences */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Display</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-white">Dark Theme</span>
+                      <p className="text-xs text-gray-500">Use dark mode interface</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const newTheme = profile.preferences.theme === 'dark' ? 'light' : 'dark';
+                        await userProfileService.updatePreferences({ theme: newTheme });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`w-12 h-6 rounded-full transition-colors ${
+                        profile.preferences.theme === 'dark' ? 'bg-purple-600' : 'bg-gray-600'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full bg-white transform transition-transform ${
+                        profile.preferences.theme === 'dark' ? 'translate-x-6' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-white">Show Glyphs</span>
+                      <p className="text-xs text-gray-500">Display symbolic glyphs in UI</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ showGlyphs: !profile.preferences.showGlyphs });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`w-12 h-6 rounded-full transition-colors ${
+                        profile.preferences.showGlyphs ? 'bg-purple-600' : 'bg-gray-600'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full bg-white transform transition-transform ${
+                        profile.preferences.showGlyphs ? 'translate-x-6' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-white">Focus Mode</span>
+                      <p className="text-xs text-gray-500">Minimize distractions</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ focusMode: !profile.preferences.focusMode });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`w-12 h-6 rounded-full transition-colors ${
+                        profile.preferences.focusMode ? 'bg-purple-600' : 'bg-gray-600'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full bg-white transform transition-transform ${
+                        profile.preferences.focusMode ? 'translate-x-6' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Metrics Display */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Metrics Display</h3>
+                <div className="flex gap-2 flex-wrap">
+                  {(['minimal', 'detailed', 'full'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ metricsDisplay: mode });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`px-4 py-2 rounded-lg text-sm capitalize ${
+                        profile.preferences.metricsDisplay === mode
+                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                          : 'bg-gray-800 text-gray-400 border border-gray-700'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dashboard Layout */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Dashboard Layout</h3>
+                <div className="flex gap-2">
+                  {(['compact', 'expanded'] as const).map(layout => (
+                    <button
+                      key={layout}
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ dashboardLayout: layout });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`px-4 py-2 rounded-lg text-sm capitalize ${
+                        profile.preferences.dashboardLayout === layout
+                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                          : 'bg-gray-800 text-gray-400 border border-gray-700'
+                      }`}
+                    >
+                      {layout}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reminders */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Reminders</h3>
+                <div className="flex gap-2 flex-wrap">
+                  {(['gentle', 'assertive', 'silent'] as const).map(style => (
+                    <button
+                      key={style}
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ reminderStyle: style });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`px-4 py-2 rounded-lg text-sm capitalize ${
+                        profile.preferences.reminderStyle === style
+                          ? 'bg-pink-500/20 text-pink-300 border border-pink-500/30'
+                          : 'bg-gray-800 text-gray-400 border border-gray-700'
+                      }`}
+                    >
+                      {style}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Roadmap Updates */}
+              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+                <h3 className="text-lg font-medium text-white mb-4">Roadmap Updates</h3>
+                <div className="flex gap-2 flex-wrap">
+                  {(['daily', 'weekly', 'biweekly', 'monthly'] as const).map(freq => (
+                    <button
+                      key={freq}
+                      onClick={async () => {
+                        await userProfileService.updatePreferences({ roadmapUpdateFrequency: freq });
+                        setProfile(userProfileService.getProfile()!);
+                      }}
+                      className={`px-4 py-2 rounded-lg text-sm capitalize ${
+                        profile.preferences.roadmapUpdateFrequency === freq
+                          ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                          : 'bg-gray-800 text-gray-400 border border-gray-700'
+                      }`}
+                    >
+                      {freq}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -346,62 +572,126 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
 }) => {
   return (
     <div className="space-y-6">
-      {/* Energy State */}
+      {/* Energy State - Redesigned */}
       {energyState && (
-        <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-xl p-5">
-          <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
-            <Zap className="w-5 h-5 text-yellow-400" />
-            Energy State
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            {(['physical', 'mental', 'emotional', 'social', 'creative'] as const).map(dim => (
-              <div key={dim} className="text-center">
-                <div className="relative w-16 h-16 mx-auto mb-2">
-                  <svg className="w-full h-full transform -rotate-90">
-                    <circle
-                      cx="32"
-                      cy="32"
-                      r="28"
-                      fill="none"
-                      stroke="rgb(31 41 55)"
-                      strokeWidth="4"
+        <div className="bg-gradient-to-br from-gray-950/80 via-gray-900/60 to-gray-950/80 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
+          {/* Header with gradient text */}
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-semibold flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/30">
+                <Zap className="w-5 h-5 text-yellow-400" />
+              </div>
+              <span className="bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
+                Energy State
+              </span>
+            </h3>
+            <div className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 ${
+              energyState.trend === 'rising' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+              energyState.trend === 'declining' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
+              'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                energyState.trend === 'rising' ? 'bg-emerald-400' :
+                energyState.trend === 'declining' ? 'bg-red-400' :
+                'bg-amber-400'
+              } animate-pulse`}></span>
+              {energyState.trend === 'rising' ? 'Rising' : energyState.trend === 'declining' ? 'Declining' : 'Stable'}
+            </div>
+          </div>
+
+          {/* Energy Dimensions - Modern Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {([
+              { key: 'physical', icon: '💪', gradient: 'from-cyan-500 to-blue-600', bg: 'from-cyan-500/10 to-blue-600/10', border: 'border-cyan-500/30' },
+              { key: 'mental', icon: '🧠', gradient: 'from-purple-500 to-violet-600', bg: 'from-purple-500/10 to-violet-600/10', border: 'border-purple-500/30' },
+              { key: 'emotional', icon: '💗', gradient: 'from-pink-500 to-rose-600', bg: 'from-pink-500/10 to-rose-600/10', border: 'border-pink-500/30' },
+              { key: 'social', icon: '🤝', gradient: 'from-emerald-500 to-green-600', bg: 'from-emerald-500/10 to-green-600/10', border: 'border-emerald-500/30' },
+              { key: 'creative', icon: '✨', gradient: 'from-orange-500 to-amber-600', bg: 'from-orange-500/10 to-amber-600/10', border: 'border-orange-500/30' }
+            ] as const).map(({ key, icon, gradient, bg, border }) => {
+              const value = energyState[key as keyof typeof energyState] as number;
+              const isLow = value < 40;
+              const isHigh = value >= 70;
+
+              return (
+                <div
+                  key={key}
+                  className={`relative p-4 rounded-xl bg-gradient-to-br ${bg} border ${border} backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] hover:shadow-lg group overflow-hidden`}
+                >
+                  {/* Glow effect for high energy */}
+                  {isHigh && (
+                    <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-10 animate-pulse`}></div>
+                  )}
+
+                  {/* Low energy warning pulse */}
+                  {isLow && (
+                    <div className="absolute top-2 right-2">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Icon and label */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-lg">{icon}</span>
+                    <span className="text-xs font-medium text-gray-400 capitalize">{key}</span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="relative h-2 bg-gray-800/50 rounded-full overflow-hidden mb-2">
+                    <div
+                      className={`absolute inset-y-0 left-0 bg-gradient-to-r ${gradient} rounded-full transition-all duration-500 shadow-lg`}
+                      style={{ width: `${value}%`, boxShadow: isHigh ? `0 0 10px ${key === 'physical' ? '#22d3ee' : key === 'mental' ? '#a855f7' : key === 'emotional' ? '#ec4899' : key === 'social' ? '#22c55e' : '#fb923c'}40` : 'none' }}
                     />
-                    <circle
-                      cx="32"
-                      cy="32"
-                      r="28"
-                      fill="none"
-                      stroke={
-                        dim === 'physical' ? 'rgb(34 211 238)' :
-                        dim === 'mental' ? 'rgb(168 85 247)' :
-                        dim === 'emotional' ? 'rgb(236 72 153)' :
-                        dim === 'social' ? 'rgb(34 197 94)' :
-                        'rgb(251 146 60)'
-                      }
-                      strokeWidth="4"
-                      strokeLinecap="round"
-                      strokeDasharray={`${energyState[dim] * 1.76} 176`}
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center text-sm font-medium text-white">
-                    {energyState[dim]}
+                  </div>
+
+                  {/* Value display */}
+                  <div className="flex items-baseline justify-between">
+                    <span className={`text-2xl font-bold bg-gradient-to-r ${gradient} bg-clip-text text-transparent`}>
+                      {value}
+                    </span>
+                    <span className="text-xs text-gray-500">/ 100</span>
+                  </div>
+
+                  {/* Status text */}
+                  <div className={`mt-1 text-[10px] ${
+                    isHigh ? 'text-emerald-400' : isLow ? 'text-red-400' : 'text-gray-500'
+                  }`}>
+                    {isHigh ? 'Optimal' : isLow ? 'Needs attention' : 'Moderate'}
                   </div>
                 </div>
-                <div className="text-xs text-gray-400 capitalize">{dim}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-          <div className="mt-4 pt-4 border-t border-gray-800 flex items-center justify-between text-sm">
-            <span className="text-gray-400">
-              Trend: <span className={
-                energyState.trend === 'rising' ? 'text-green-400' :
-                energyState.trend === 'declining' ? 'text-red-400' :
-                'text-yellow-400'
-              }>{energyState.trend}</span>
-            </span>
-            <span className="text-gray-400">
-              Tomorrow forecast: <span className="text-white">{energyState.predictedTomorrow}%</span>
-            </span>
+
+          {/* Tomorrow Forecast - Enhanced */}
+          <div className="mt-5 p-4 rounded-xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-purple-500/20">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-purple-500/20">
+                  <TrendingUp className="w-4 h-4 text-purple-400" />
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400">Tomorrow's Forecast</div>
+                  <div className="text-sm font-medium text-white">Predicted Energy Level</div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className={`text-3xl font-bold ${
+                  energyState.predictedTomorrow >= 70 ? 'text-emerald-400' :
+                  energyState.predictedTomorrow >= 40 ? 'text-amber-400' :
+                  'text-red-400'
+                }`}>
+                  {energyState.predictedTomorrow}%
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  {energyState.predictedTomorrow >= 70 ? 'Looking great!' :
+                   energyState.predictedTomorrow >= 40 ? 'Room for improvement' :
+                   'Consider extra rest'}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -115,6 +115,17 @@ export interface MetricsSnapshot {
   fieldState: 'coherent' | 'transitioning' | 'fragmented' | 'dormant';
 }
 
+export interface DomainQuestionAnswers {
+  [domainId: string]: {
+    improvement?: string;
+    obstacle?: string;
+    emotion?: string;
+    vision?: string;
+    currentFocus?: string;
+    targetOutcome?: string;
+  };
+}
+
 export interface UserProfile {
   id: string;
   displayName: string;
@@ -125,6 +136,7 @@ export interface UserProfile {
   goals: UserGoals[];
   habits: HabitTrack[];
   beatRoadmaps: BeatRoadmapConfig[];
+  domainAnswers: DomainQuestionAnswers; // Life domain question answers
   preferences: UserPreferences;
   metricsHistory: MetricsSnapshot[];
   createdAt: string;
@@ -224,6 +236,7 @@ export const createDefaultProfile = (): UserProfile => ({
     currentFocus: '',
     targetOutcome: '',
   })),
+  domainAnswers: {}, // Life domain question answers (body, mind, emotion, spirit, social, creative)
   preferences: {
     theme: 'dark',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -474,6 +487,41 @@ class UserProfileService {
 
   getBeatRoadmap(category: string): BeatRoadmapConfig | undefined {
     return this.profile?.beatRoadmaps.find(br => br.category === category);
+  }
+
+  // Domain Question Answers
+  async saveDomainAnswer(
+    domainId: string,
+    field: 'improvement' | 'obstacle' | 'emotion' | 'vision' | 'currentFocus' | 'targetOutcome',
+    value: string
+  ): Promise<void> {
+    const domainAnswers = { ...(this.profile?.domainAnswers || {}) };
+    if (!domainAnswers[domainId]) {
+      domainAnswers[domainId] = {};
+    }
+    domainAnswers[domainId][field] = value;
+    await this.updateProfile({ domainAnswers });
+  }
+
+  async saveDomainAnswers(domainId: string, answers: {
+    improvement?: string;
+    obstacle?: string;
+    emotion?: string;
+    vision?: string;
+    currentFocus?: string;
+    targetOutcome?: string;
+  }): Promise<void> {
+    const domainAnswers = { ...(this.profile?.domainAnswers || {}) };
+    domainAnswers[domainId] = { ...(domainAnswers[domainId] || {}), ...answers };
+    await this.updateProfile({ domainAnswers });
+  }
+
+  getDomainAnswers(domainId: string): DomainQuestionAnswers[string] | undefined {
+    return this.profile?.domainAnswers?.[domainId];
+  }
+
+  getAllDomainAnswers(): DomainQuestionAnswers {
+    return this.profile?.domainAnswers || {};
   }
 
   // Metrics History
