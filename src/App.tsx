@@ -3,7 +3,7 @@ import {
   Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
   CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer,
-  Activity, AlertTriangle, FileText, Settings, Bell, BarChart3, Music, User
+  Activity, AlertTriangle, FileText, Settings, Bell, BarChart3, Music, User, Disc3
 } from 'lucide-react';
 import { GoogleCalendarService } from './lib/googleCalendar';
 import { getDeltaHVState } from './lib/deltaHVEngine';
@@ -21,6 +21,8 @@ import { AnalyticsPage } from './components/AnalyticsPage';
 import { MusicLibrary } from './components/MusicLibrary';
 import { UserProfilePage } from './components/UserProfilePage';
 import { RoadmapView } from './components/RoadmapView';
+import { BrainRegionChallenge } from './components/BrainRegionChallenge';
+import { DJTab } from './components/DJTab';
 // MetricsDisplay available for use in future enhancements
 // import { MetricsDisplay, InlineMetrics } from './components/MetricsDisplay';
 
@@ -169,10 +171,8 @@ export default function App() {
   const [generalNoteTime, setGeneralNoteTime] = useState(toTimeInput(addMinutes(new Date(), 30)));
 
   const [mixerOpen, setMixerOpen] = useState(false);
-  const [mixFreqs, setMixFreqs] = useState<number[]>([432, 0, 0]);
-  const mixCtx = useRef<AudioContext | null>(null);
+  // DJ tab state - keeping minimal state for cleanup
   const mixOsc = useRef<(OscillatorNode | null)[]>([null, null, null]);
-  const mixGain = useRef<(GainNode | null)[]>([null, null, null]);
   const [mixPlaying, setMixPlaying] = useState(false);
 
   const [glyphCanvasOpen, setGlyphCanvasOpen] = useState(false);
@@ -1581,8 +1581,8 @@ export default function App() {
             const when = addMinutes(selectedDate, 15);
             scheduleBeat('Moderation', 'Med Reminder', when, '', currentWave?.id);
           }} />
-          <RoundButton icon={<SpiralGlyph size={40} />} label="Glyph" onClick={() => setGlyphCanvasOpen(true)} />
-          <RoundButton icon={<Volume2 className="w-8 h-8 text-violet-400"/>} label="Frequency" onClick={() => setMixerOpen(true)} />
+          <RoundButton icon={<Brain className="w-8 h-8 text-purple-400" />} label="Challenges" onClick={() => setGlyphCanvasOpen(true)} />
+          <RoundButton icon={<Disc3 className="w-8 h-8 text-violet-400"/>} label="DJ" onClick={() => setMixerOpen(true)} />
           <RoundButton icon={<span className="text-4xl">∞</span>} label="General" onClick={() => {
             setGeneralNoteText('');
             setGeneralNoteTime(toTimeInput(addMinutes(new Date(), 30)));
@@ -1903,47 +1903,8 @@ export default function App() {
         )}
 
         {mixerOpen && (
-          <ToneMixer
-            freqs={mixFreqs}
-            playing={mixPlaying}
-            onChangeFreq={(i: number, v: number) => {
-              const next = [...mixFreqs];
-              next[i] = v;
-              setMixFreqs(next);
-              if (mixPlaying && mixOsc.current[i]) {
-                mixOsc.current[i]!.frequency.setValueAtTime(v, (mixCtx.current as AudioContext).currentTime);
-              }
-            }}
-            onToggle={() => {
-              if (!mixPlaying) {
-                if (!mixCtx.current) mixCtx.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-                for (let i = 0; i < 3; i++) {
-                  if (mixFreqs[i] && mixFreqs[i] > 0) {
-                    const osc = mixCtx.current.createOscillator();
-                    const g = mixCtx.current.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(mixFreqs[i], mixCtx.current.currentTime);
-                    g.gain.setValueAtTime(0.0, mixCtx.current.currentTime);
-                    g.gain.linearRampToValueAtTime(0.12, mixCtx.current.currentTime + 0.4);
-                    osc.connect(g);
-                    g.connect(mixCtx.current.destination);
-                    osc.start();
-                    mixOsc.current[i] = osc;
-                    mixGain.current[i] = g;
-                  }
-                }
-                setMixPlaying(true);
-              } else {
-                for (let i = 0; i < 3; i++) {
-                  try {
-                    mixOsc.current[i]?.stop();
-                  } catch {}
-                  mixOsc.current[i] = null;
-                  mixGain.current[i] = null;
-                }
-                setMixPlaying(false);
-              }
-            }}
+          <DJTab
+            deltaHV={deltaHVState}
             onClose={() => {
               if (mixPlaying) {
                 for (let i = 0; i < 3; i++) {
@@ -1959,7 +1920,15 @@ export default function App() {
         )}
 
         {glyphCanvasOpen && (
-          <GlyphCanvas onClose={() => setGlyphCanvasOpen(false)} />
+          <BrainRegionChallenge
+            deltaHV={deltaHVState}
+            onClose={() => setGlyphCanvasOpen(false)}
+            onCompleteChallenge={(regionId, xp) => {
+              console.log(`Challenge completed: ${regionId} +${xp}XP`);
+              // Record action to metrics hub
+              metricsHub.recordAction(`challenge_complete_${regionId}`);
+            }}
+          />
         )}
 
         {/* Audit Trail Modal (Phase 4) */}
@@ -2024,10 +1993,6 @@ function getIcon(cat: string) {
     case 'Anchor': return <Zap className={`${iconClass} text-amber-400`} />;
     default: return <Sparkles className={iconClass} />;
   }
-}
-
-function SpiralGlyph({ size = 32 }: { size?: number }) {
-  return <span style={{ fontSize: size }} className="text-amber-400">🌀</span>;
 }
 
 function RoundButton({ icon, label, onClick }: { icon: React.ReactElement; label: string; onClick: () => void }) {
@@ -2561,123 +2526,7 @@ function GeneralNoteModal({ date, text, time, onChangeText, onChangeTime, onClos
   );
 }
 
-function ToneMixer({ freqs, playing, onChangeFreq, onToggle, onClose }: any) {
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-4">
-      <div className="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Volume2 className="w-5 h-5 text-violet-400" />
-            <span className="text-sm text-gray-400">3-Tier Frequency Modulator</span>
-          </div>
-          <button onClick={onClose} className="px-2 py-1 rounded-lg bg-gray-900/70 border border-gray-800 hover:bg-gray-800">Close</button>
-        </div>
-        {[0, 1, 2].map(i => (
-          <div key={i} className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-gray-400">
-              <span>Layer {i + 1}</span>
-              <span>{freqs[i] ? `${freqs[i]} Hz` : 'off'}</span>
-            </div>
-            <input type="range" min={0} max={1000} step={1} value={freqs[i]} onChange={(e) => onChangeFreq(i, parseInt(e.target.value || '0'))} className="w-full" />
-          </div>
-        ))}
-        <div className="flex items-center justify-end gap-2">
-          <button onClick={onToggle} className={`px-4 py-2 rounded-xl ${playing ? 'bg-rose-500 text-black hover:bg-rose-400' : 'bg-violet-500 text-black hover:bg-violet-400'}`}>
-            {playing ? 'Stop' : 'Play'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function GlyphCanvas({ onClose }: { onClose: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
-    ctx.strokeStyle = '#a78bfa';
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-  }, []);
-
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    setIsDrawing(true);
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => setIsDrawing(false);
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  };
-
-  const saveGlyph = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL('image/png');
-    const link = document.createElement('a');
-    link.download = `glyph_${Date.now()}.png`;
-    link.href = dataUrl;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col">
-      <div className="flex items-center justify-between p-4 border-b border-gray-800">
-        <button onClick={onClose} className="p-2 rounded-lg bg-gray-900/70 border border-gray-800 hover:bg-gray-800">
-          <X className="w-6 h-6" />
-        </button>
-        <h2 className="text-xl font-light text-purple-400 flex items-center gap-2">
-          🌀 Glyph Canvas
-        </h2>
-        <div className="flex gap-2">
-          <button onClick={saveGlyph} className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white flex items-center gap-2">
-            <Download className="w-4 h-4" />Save
-          </button>
-          <button onClick={clearCanvas} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white">
-            Clear
-          </button>
-        </div>
-      </div>
-      <canvas ref={canvasRef} className="flex-1 bg-gray-950 touch-none" onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} />
-    </div>
-  );
-}
+// ToneMixer and GlyphCanvas have been replaced by DJTab and BrainRegionChallenge components
 
 /**
  * Audit Trail Modal (Phase 4)
