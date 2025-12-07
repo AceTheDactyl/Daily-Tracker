@@ -855,10 +855,43 @@ export default function App() {
                 month={visibleMonth}
                 selectedDate={selectedDate}
                 deviationDay={rhythmProfile.deviationDay}
+                checkIns={checkIns}
                 onPrev={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))}
                 onNext={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))}
                 onSelect={(d) => setSelectedDate(d)}
               />
+
+              {/* Bulk Upload to Google Calendar */}
+              {gcalAuthed && checkIns.filter(c => !c.done && new Date(c.slot) >= new Date()).length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-800">
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Upload all upcoming beats to Google Calendar?')) return;
+                      setSaveStatus('saving');
+                      try {
+                        const upcomingBeats = checkIns.filter(c => !c.done && new Date(c.slot) >= new Date());
+                        let successCount = 0;
+                        for (const beat of upcomingBeats) {
+                          await syncToGoogleCalendar(beat);
+                          successCount++;
+                        }
+                        setSaveStatus('saved');
+                        alert(`Successfully uploaded ${successCount} beats to Google Calendar!`);
+                        setTimeout(() => setSaveStatus('idle'), 1200);
+                      } catch (error) {
+                        console.error('Bulk upload failed:', error);
+                        setSaveStatus('error');
+                        alert('Failed to upload beats to Google Calendar');
+                        setTimeout(() => setSaveStatus('idle'), 2000);
+                      }
+                    }}
+                    className="w-full px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 flex items-center justify-center gap-2 text-sm"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Upload All Upcoming Beats to Google Calendar
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1059,8 +1092,8 @@ function RoundButton({ icon, label, onClick }: { icon: React.ReactElement; label
   );
 }
 
-function CalendarMonth({ month, selectedDate, deviationDay, onPrev, onNext, onSelect }: {
-  month: Date; selectedDate: Date; deviationDay?: number; onPrev:()=>void; onNext:()=>void; onSelect:(d:Date)=>void;
+function CalendarMonth({ month, selectedDate, deviationDay, checkIns, onPrev, onNext, onSelect }: {
+  month: Date; selectedDate: Date; deviationDay?: number; checkIns: CheckIn[]; onPrev:()=>void; onNext:()=>void; onSelect:(d:Date)=>void;
 }) {
   const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
   const endOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth()+1, 0);
@@ -1075,6 +1108,10 @@ function CalendarMonth({ month, selectedDate, deviationDay, onPrev, onNext, onSe
   while(days.length % 7 !== 0) days.push(new Date(last.getFullYear(), last.getMonth()+1, days.length % 7));
 
   const isCurrentMonth = (d:Date) => d.getMonth() === month.getMonth();
+
+  const getBeatsForDay = (d: Date) => {
+    return checkIns.filter(c => sameDay(new Date(c.slot), d));
+  };
 
   return (
     <div>
@@ -1091,11 +1128,27 @@ function CalendarMonth({ month, selectedDate, deviationDay, onPrev, onNext, onSe
           const disabled = !isCurrentMonth(d);
           const active = sameDay(d, selectedDate);
           const isDeviation = d.getDay() === deviationDay;
+          const dayBeats = getBeatsForDay(d);
+          const upcomingCount = dayBeats.filter(b => !b.done).length;
+          const completedCount = dayBeats.filter(b => b.done).length;
+
           return (
             <button key={i} onClick={()=>onSelect(d)}
               className={`relative aspect-square rounded-lg border text-sm ${disabled?'text-gray-600 border-gray-800 bg-gray-950/40':'text-gray-200 border-gray-800 bg-gray-900/60 hover:bg-gray-800/60'} ${active?'!border-cyan-500 !bg-cyan-600 !text-black':''} ${isDeviation && !disabled?'!border-orange-500/50':''}`}
             >
-              {d.getDate()}
+              <div className="flex flex-col items-center justify-center h-full">
+                <span>{d.getDate()}</span>
+                {!disabled && dayBeats.length > 0 && (
+                  <div className="flex gap-0.5 mt-0.5">
+                    {upcomingCount > 0 && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" title={`${upcomingCount} upcoming`}></div>
+                    )}
+                    {completedCount > 0 && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-400" title={`${completedCount} completed`}></div>
+                    )}
+                  </div>
+                )}
+              </div>
               {isDeviation && !disabled && <span className="absolute top-0.5 right-0.5 text-orange-400 text-xs">⚡</span>}
             </button>
           );
