@@ -234,8 +234,16 @@ export default function App() {
   }, []);
 
   // Sync to Google Calendar
-  const syncToGoogleCalendar = async (checkIn: CheckIn) => {
-    if (!gcalService || !gcalAuthed || !syncEnabled) return;
+  const syncToGoogleCalendar = async (checkIn: CheckIn, forceSend: boolean = false) => {
+    if (!gcalService || !gcalAuthed) {
+      console.log('Cannot sync: Calendar service not available or not authenticated');
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    if (!forceSend && !syncEnabled) {
+      console.log('Auto-sync disabled');
+      return { success: false, error: 'Auto-sync disabled' };
+    }
 
     try {
       const start = new Date(checkIn.slot);
@@ -253,15 +261,21 @@ export default function App() {
         `\n🔗 Synced from Pulse Check Rhythm`
       ].filter(Boolean).join('\n');
 
-      await gcalService.createEvent({
+      console.log(`Syncing to Google Calendar: ${checkIn.category} - ${checkIn.task}`);
+
+      const result = await gcalService.createEvent({
         summary: `${getCategoryIcon(checkIn.category)} ${checkIn.task}`,
         description: descriptionParts,
         start: start.toISOString(),
         end: end.toISOString(),
         colorId: getGoogleCalendarColor(checkIn.waveId),
       });
-    } catch (error) {
+
+      console.log('Successfully synced to Google Calendar:', result);
+      return { success: true, result };
+    } catch (error: any) {
       console.error('Failed to sync to Google Calendar:', error);
+      return { success: false, error: error.message || 'Unknown error' };
     }
   };
 
@@ -892,29 +906,38 @@ export default function App() {
                 <div className="mt-4 pt-4 border-t border-gray-800">
                   <button
                     onClick={async () => {
-                      if (!confirm('Upload all upcoming beats to Google Calendar?')) return;
+                      const upcomingBeats = checkIns.filter(c => !c.done && new Date(c.slot) >= new Date());
+                      if (!confirm(`Upload ${upcomingBeats.length} upcoming beats to Google Calendar?\n\nThis will create calendar events with full details for each beat.`)) return;
+
                       setSaveStatus('saving');
-                      try {
-                        const upcomingBeats = checkIns.filter(c => !c.done && new Date(c.slot) >= new Date());
-                        let successCount = 0;
-                        for (const beat of upcomingBeats) {
-                          await syncToGoogleCalendar(beat);
+                      let successCount = 0;
+                      let failCount = 0;
+                      const errors: string[] = [];
+
+                      for (const beat of upcomingBeats) {
+                        const result = await syncToGoogleCalendar(beat, true); // Force send
+                        if (result.success) {
                           successCount++;
+                        } else {
+                          failCount++;
+                          errors.push(`${beat.category} - ${beat.task}: ${result.error}`);
                         }
-                        setSaveStatus('saved');
-                        alert(`Successfully uploaded ${successCount} beats to Google Calendar!`);
-                        setTimeout(() => setSaveStatus('idle'), 1200);
-                      } catch (error) {
-                        console.error('Bulk upload failed:', error);
-                        setSaveStatus('error');
-                        alert('Failed to upload beats to Google Calendar');
-                        setTimeout(() => setSaveStatus('idle'), 2000);
                       }
+
+                      if (failCount === 0) {
+                        setSaveStatus('saved');
+                        alert(`✅ Successfully uploaded ${successCount} beats to Google Calendar!\n\nCheck your Google Calendar to see all your beats with full details.`);
+                      } else {
+                        setSaveStatus('error');
+                        const errorMsg = errors.slice(0, 5).join('\n');
+                        alert(`⚠️ Upload completed with issues:\n\n✅ Success: ${successCount}\n❌ Failed: ${failCount}\n\nErrors:\n${errorMsg}${errors.length > 5 ? '\n...(and more)' : ''}\n\nCheck browser console for details.`);
+                      }
+                      setTimeout(() => setSaveStatus('idle'), 2000);
                     }}
                     className="w-full px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 flex items-center justify-center gap-2 text-sm"
                   >
                     <Calendar className="w-4 h-4" />
-                    Upload All Upcoming Beats to Google Calendar
+                    Upload All Upcoming Beats to Google Calendar ({checkIns.filter(c => !c.done && new Date(c.slot) >= new Date()).length})
                   </button>
                 </div>
               )}
