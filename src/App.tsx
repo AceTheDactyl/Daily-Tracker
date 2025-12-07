@@ -11,6 +11,8 @@ import type { DeltaHVState } from './lib/deltaHVEngine';
 import { auditLog, logCheckInCreated, logCheckInCompleted, logDeltaHVCalculated } from './lib/auditLog';
 import { RhythmState, createRhythmStateEngine } from './lib/rhythmStateEngine';
 import type { RhythmStateEngine, RhythmStateInfo } from './lib/rhythmStateEngine';
+import { createRhythmPlanner } from './lib/rhythmPlanner';
+import type { RhythmPlanner, PlannerSuggestion } from './lib/rhythmPlanner';
 
 // Storage safety shim
 declare global {
@@ -176,6 +178,11 @@ export default function App() {
   // Audit Trail UI State (Phase 4)
   const [auditTrailOpen, setAuditTrailOpen] = useState(false);
 
+  // Rhythm Planner (Phase 3 Partial)
+  const plannerRef = useRef<RhythmPlanner | null>(null);
+  const [plannerSuggestions, setPlannerSuggestions] = useState<PlannerSuggestion[]>([]);
+  const [suggestionsExpanded, setSuggestionsExpanded] = useState(true);
+
   // Load data with safe storage
   useEffect(() => {
     const load = async () => {
@@ -222,7 +229,7 @@ export default function App() {
     }
   }, [checkIns, journals, rhythmProfile, isLoading]);
 
-  // Initialize Audit Log and Rhythm State Engine (Phase 2 & 4)
+  // Initialize Audit Log, Rhythm State Engine, and Planner (Phase 2, 3 & 4)
   useEffect(() => {
     const initSystems = async () => {
       // Initialize audit log
@@ -232,9 +239,22 @@ export default function App() {
       if (rhythmProfile.setupComplete && !rhythmEngineRef.current) {
         rhythmEngineRef.current = createRhythmStateEngine(rhythmProfile);
 
-        // Subscribe to state changes
+        // Create rhythm planner
+        plannerRef.current = createRhythmPlanner();
+        plannerRef.current.updateWaves(rhythmProfile.waves);
+
+        // Subscribe to planner suggestions
+        plannerRef.current.subscribe((suggestions) => {
+          setPlannerSuggestions(suggestions);
+        });
+
+        // Subscribe to rhythm state changes and notify planner
         rhythmEngineRef.current.subscribe((info) => {
           setRhythmStateInfo(info);
+          // Notify planner of state change
+          if (plannerRef.current) {
+            plannerRef.current.onRhythmStateChange(info.state, info.trigger);
+          }
         });
 
         // Start auto-update (every 60 seconds)
@@ -258,7 +278,7 @@ export default function App() {
     };
   }, [isLoading, rhythmProfile.setupComplete]);
 
-  // Update rhythm engine when check-ins or profile changes
+  // Update rhythm engine and planner when check-ins or profile changes
   useEffect(() => {
     if (rhythmEngineRef.current) {
       rhythmEngineRef.current.updateCheckIns(checkIns);
@@ -266,6 +286,10 @@ export default function App() {
       // Recalculate state after data update
       const newInfo = rhythmEngineRef.current.updateState();
       setRhythmStateInfo(newInfo);
+    }
+    if (plannerRef.current) {
+      plannerRef.current.updateCheckIns(checkIns);
+      plannerRef.current.updateWaves(rhythmProfile.waves);
     }
   }, [checkIns, rhythmProfile]);
 
@@ -968,6 +992,101 @@ export default function App() {
                 <div className="text-xs text-gray-500 flex flex-wrap gap-3 justify-center">
                   <span>ΔHV = S(20%) + R(30%) + (100-δφ)(25%) + H(25%)</span>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* AI Planner Suggestions (Phase 3 Partial) */}
+        {plannerSuggestions.length > 0 && (
+          <div className="bg-gradient-to-r from-purple-950/40 to-cyan-950/40 backdrop-blur border border-purple-700/30 rounded-2xl overflow-hidden">
+            <button
+              onClick={() => setSuggestionsExpanded(!suggestionsExpanded)}
+              className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-purple-900/60 flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-purple-400" />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium flex items-center gap-2">
+                    AI Suggestions
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-purple-900/60 text-purple-300">
+                      {plannerSuggestions.length} active
+                    </span>
+                  </p>
+                  <p className="text-sm text-gray-400">Rhythm optimization recommendations</p>
+                </div>
+              </div>
+              {suggestionsExpanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+            </button>
+
+            {suggestionsExpanded && (
+              <div className="px-4 pb-4 space-y-3">
+                {plannerSuggestions.map(suggestion => (
+                  <div
+                    key={suggestion.id}
+                    className={`rounded-xl p-4 border ${
+                      suggestion.priority === 'high' ? 'bg-rose-950/30 border-rose-700/40' :
+                      suggestion.priority === 'medium' ? 'bg-amber-950/30 border-amber-700/40' :
+                      'bg-gray-900/40 border-gray-700/40'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <p className={`font-medium ${
+                          suggestion.priority === 'high' ? 'text-rose-300' :
+                          suggestion.priority === 'medium' ? 'text-amber-300' :
+                          'text-gray-300'
+                        }`}>
+                          {suggestion.title}
+                        </p>
+                        <p className="text-sm text-gray-400 mt-1">{suggestion.description}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        {suggestion.action?.type === 'create_event' && (
+                          <button
+                            onClick={() => {
+                              const accepted = plannerRef.current?.acceptSuggestion(suggestion.id);
+                              if (accepted?.action?.payload) {
+                                const payload = accepted.action.payload;
+                                const start = new Date();
+                                start.setMinutes(start.getMinutes() + 5);
+                                scheduleBeat(
+                                  'General',
+                                  payload.summary,
+                                  start,
+                                  payload.description,
+                                  undefined,
+                                  false
+                                );
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-sm"
+                          >
+                            Schedule
+                          </button>
+                        )}
+                        <button
+                          onClick={() => plannerRef.current?.dismissSuggestion(suggestion.id)}
+                          className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm text-gray-400"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className={`text-xs px-2 py-0.5 rounded ${
+                        suggestion.priority === 'high' ? 'bg-rose-900/50 text-rose-300' :
+                        suggestion.priority === 'medium' ? 'bg-amber-900/50 text-amber-300' :
+                        'bg-gray-800 text-gray-400'
+                      }`}>
+                        {suggestion.priority}
+                      </span>
+                      <span className="text-xs text-gray-500">{suggestion.type.replace(/_/g, ' ')}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
