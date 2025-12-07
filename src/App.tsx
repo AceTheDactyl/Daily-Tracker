@@ -81,6 +81,9 @@ interface CheckIn {
   done: boolean;
   expanded?: boolean;
   isAnchor?: boolean;
+  selectedTrackId?: string;
+  selectedTrackName?: string;
+  selectedTrackEmotion?: string;
 }
 
 interface JournalEntry {
@@ -149,6 +152,8 @@ export default function App() {
   const [miniTime, setMiniTime] = useState(toTimeInput(addMinutes(new Date(), 30)));
   const [miniNote, setMiniNote] = useState('');
   const [miniWaveId, setMiniWaveId] = useState<string>('');
+  const [miniSelectedTrack, setMiniSelectedTrack] = useState<{ id: string; name: string; emotion: string } | null>(null);
+  const [availableTracks, setAvailableTracks] = useState<Array<{ id: string; name: string; categoryId: string }>>([]);
 
   const [newJournalOpen, setNewJournalOpen] = useState(false);
   const [newJournalContent, setNewJournalContent] = useState('');
@@ -465,6 +470,17 @@ export default function App() {
     }
   }, [gcalService, gcalAuthed]);
 
+  // Load available tracks when mini scheduler opens
+  useEffect(() => {
+    const loadTracks = async () => {
+      if (miniOpen) {
+        const tracks = await musicLibrary.getAllTracks();
+        setAvailableTracks(tracks.map(t => ({ id: t.id, name: t.name, categoryId: t.categoryId })));
+      }
+    };
+    loadTracks();
+  }, [miniOpen]);
+
   // Sync to Google Calendar
   const syncToGoogleCalendar = async (checkIn: CheckIn, forceSend: boolean = false) => {
     if (!gcalService || !gcalAuthed) {
@@ -489,6 +505,7 @@ export default function App() {
         wave ? `🌊 Wave: ${wave.name} (${wave.description})` : '',
         checkIn.note ? `📝 Note: ${checkIn.note}` : '',
         checkIn.isAnchor ? '⚡ Daily Anchor Beat' : '',
+        checkIn.selectedTrackName ? `🎵 Music: "${checkIn.selectedTrackName}" (${checkIn.selectedTrackEmotion || 'Unspecified'})` : '',
         `🕐 Scheduled: ${formatTime(start)}`,
         `\n🔗 Synced from Pulse Check Rhythm`
       ].filter(Boolean).join('\n');
@@ -605,7 +622,15 @@ export default function App() {
     }
   };
 
-  const scheduleBeat = async (category: string, task: string, when: Date, note?: string, waveId?: string, isAnchor?: boolean) => {
+  const scheduleBeat = async (
+    category: string,
+    task: string,
+    when: Date,
+    note?: string,
+    waveId?: string,
+    isAnchor?: boolean,
+    trackInfo?: { id: string; name: string; emotion: string }
+  ) => {
     const entry: CheckIn = {
       id: Date.now().toString() + Math.random(),
       category,
@@ -615,7 +640,10 @@ export default function App() {
       loggedAt: new Date().toISOString(),
       note,
       done: false,
-      isAnchor
+      isAnchor,
+      selectedTrackId: trackInfo?.id,
+      selectedTrackName: trackInfo?.name,
+      selectedTrackEmotion: trackInfo?.emotion
     };
     setCheckIns(prev => [entry, ...prev]);
 
@@ -1650,20 +1678,28 @@ export default function App() {
             note={miniNote}
             waveId={miniWaveId}
             waves={rhythmProfile.waves}
+            availableTracks={availableTracks}
+            selectedTrack={miniSelectedTrack}
+            emotionalCategories={EMOTIONAL_CATEGORIES}
             onChange={(p: any) => {
               if (p.time !== undefined) setMiniTime(p.time);
               if (p.task !== undefined) setMiniTask(p.task);
               if (p.note !== undefined) setMiniNote(p.note);
               if (p.waveId !== undefined) setMiniWaveId(p.waveId);
+              if (p.track !== undefined) setMiniSelectedTrack(p.track);
             }}
-            onClose={() => setMiniOpen(false)}
+            onClose={() => {
+              setMiniOpen(false);
+              setMiniSelectedTrack(null);
+            }}
             onSubmit={() => {
               const [hh, mm] = miniTime.split(':').map(n => parseInt(n));
               const when = new Date(selectedDate);
               when.setHours(hh || 0, mm || 0, 0, 0);
               const task = miniTask || `${miniCategory} Beat`;
-              scheduleBeat(miniCategory, task, when, miniNote, miniWaveId);
+              scheduleBeat(miniCategory, task, when, miniNote, miniWaveId, false, miniSelectedTrack || undefined);
               setMiniOpen(false);
+              setMiniSelectedTrack(null);
             }}
           />
         )}
@@ -2215,12 +2251,13 @@ function WaveAnchorsModal({ waves, selectedDate, checkIns, onClose, onSetAnchor 
   );
 }
 
-function MiniScheduler({ date, category, presetTasks, time, note, waveId, waves, onChange, onClose, onSubmit }: any) {
+function MiniScheduler({ date, category, presetTasks, time, note, waveId, waves, availableTracks, selectedTrack, emotionalCategories, onChange, onClose, onSubmit }: any) {
   const [selectedTask, setSelectedTask] = useState<string>('');
+  const [showTrackPicker, setShowTrackPicker] = useState(false);
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-4">
-      <div className="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl p-5 space-y-3">
+      <div className="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl p-5 space-y-3 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <div className="text-sm text-gray-400">{date.toDateString()}</div>
           <button onClick={onClose} className="px-2 py-1 rounded-lg bg-gray-900/70 border border-gray-800 hover:bg-gray-800">Close</button>
@@ -2253,6 +2290,58 @@ function MiniScheduler({ date, category, presetTasks, time, note, waveId, waves,
         <input value={time} onChange={(e) => onChange({ time: e.target.value })} type="time" className="w-full px-3 py-2 rounded-xl bg-gray-900/70 border border-gray-800 outline-none focus:border-cyan-500" />
         <input onChange={(e) => onChange({ task: e.target.value })} placeholder="or type custom task..." className="w-full px-3 py-2 rounded-xl bg-gray-900/70 border border-gray-800 outline-none focus:border-cyan-500" />
         <textarea value={note} onChange={(e) => onChange({ note: e.target.value })} placeholder="note (optional)" className="w-full min-h-[64px] px-3 py-2 rounded-xl bg-gray-900/70 border border-gray-800 outline-none focus:border-cyan-500" />
+
+        {/* Music Selection */}
+        <div>
+          <label className="text-xs text-gray-400 mb-1 block">🎵 Add Music (optional)</label>
+          {selectedTrack ? (
+            <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-purple-900/30 border border-purple-500/50">
+              <div className="flex items-center gap-2">
+                <span>{emotionalCategories?.[selectedTrack.emotion]?.icon || '🎵'}</span>
+                <span className="text-sm text-purple-200">{selectedTrack.name}</span>
+                <span className="text-xs text-purple-400">({emotionalCategories?.[selectedTrack.emotion]?.name || selectedTrack.emotion})</span>
+              </div>
+              <button
+                onClick={() => onChange({ track: null })}
+                className="text-xs text-red-400 hover:text-red-300"
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowTrackPicker(!showTrackPicker)}
+              className="w-full px-3 py-2 rounded-xl bg-gray-900/70 border border-gray-800 hover:border-purple-500/50 text-left text-sm text-gray-400 hover:text-purple-300 transition-colors"
+            >
+              {showTrackPicker ? 'Hide tracks...' : 'Select a track for this beat...'}
+            </button>
+          )}
+
+          {showTrackPicker && !selectedTrack && availableTracks && availableTracks.length > 0 && (
+            <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+              {availableTracks.map((track: any) => (
+                <button
+                  key={track.id}
+                  onClick={() => {
+                    onChange({ track: { id: track.id, name: track.name, emotion: track.categoryId } });
+                    setShowTrackPicker(false);
+                  }}
+                  className="w-full px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-800 hover:border-purple-500/50 text-left flex items-center gap-2"
+                >
+                  <span>{emotionalCategories?.[track.categoryId]?.icon || '🎵'}</span>
+                  <span className="text-sm text-gray-200 flex-1">{track.name}</span>
+                  <span className="text-xs text-gray-500">{emotionalCategories?.[track.categoryId]?.name || track.categoryId}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {showTrackPicker && (!availableTracks || availableTracks.length === 0) && (
+            <div className="mt-2 text-xs text-gray-500 text-center py-2">
+              No tracks in library. Add music via the Music button above.
+            </div>
+          )}
+        </div>
 
         <div className="flex justify-end">
           <button onClick={onSubmit} className="px-4 py-2 rounded-xl bg-amber-500 text-black hover:bg-amber-400">Schedule</button>
