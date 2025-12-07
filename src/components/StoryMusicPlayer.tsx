@@ -97,13 +97,33 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
         const queue = await storyShuffleEngine.generateHilbertShuffle(allTracks, deltaHV);
         setShuffleQueue(queue);
       }
+
+      // Sync initial playback state from library
+      const playbackState = musicLibrary.getPlaybackState();
+      setIsPlaying(playbackState.isPlaying);
+      if (playbackState.currentSession) {
+        const currentTrackId = musicLibrary.getCurrentTrackId();
+        if (currentTrackId) {
+          const track = allTracks.find(t => t.id === currentTrackId);
+          if (track) {
+            setCurrentTrack(track);
+            setPlayStartTime(new Date(playbackState.currentSession.startedAt).getTime());
+          }
+        }
+      }
     };
 
     init();
 
-    // Subscribe to updates
+    // Subscribe to track library updates
     const unsubLibrary = musicLibrary.subscribe(() => {
       musicLibrary.getAllTracks().then(setTracks);
+    });
+
+    // Subscribe to playback state changes - CRITICAL for play/pause sync
+    const unsubPlayback = musicLibrary.subscribeToPlayback((state) => {
+      setIsPlaying(state.isPlaying);
+      // If track stopped completely, keep the current track displayed but show paused state
     });
 
     const unsubShuffle = storyShuffleEngine.subscribe(() => {
@@ -114,6 +134,7 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
 
     return () => {
       unsubLibrary();
+      unsubPlayback();
       unsubShuffle();
     };
   }, [deltaHV]);
@@ -145,10 +166,11 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
     }
   }, [deltaHV?.fieldState, tracks.length, isShuffled]);
 
-  // Play track
+  // Play track - musicLibrary handles stopping any current playback
   const playTrack = useCallback(async (track: MusicTrack) => {
     // Record skip for previous track if it was playing
-    if (currentTrack && isPlaying) {
+    const wasPlaying = musicLibrary.isCurrentlyPlaying();
+    if (currentTrack && wasPlaying) {
       const listenedTime = (Date.now() - playStartTime) / 1000;
       storyShuffleEngine.recordPlayEvent(
         currentTrack,
@@ -159,6 +181,7 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
       );
     }
 
+    // musicLibrary.playTrack will stop any current playback first
     const session = await musicLibrary.playTrack(
       track.id,
       track.categoryId,
@@ -168,10 +191,10 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
 
     if (session) {
       setCurrentTrack(track);
-      setIsPlaying(true);
       setPlayStartTime(Date.now());
+      // Note: isPlaying will be set by the playback subscription
     }
-  }, [currentTrack, isPlaying, playStartTime, deltaHV]);
+  }, [currentTrack, playStartTime, deltaHV]);
 
   // Skip forward (empowerment action)
   const handleSkip = useCallback(async () => {
@@ -207,21 +230,30 @@ export const StoryMusicPlayer: React.FC<StoryMusicPlayerProps> = ({
     }
   }, [tracks, playTrack]);
 
-  // Toggle play/pause
-  const togglePlay = useCallback(() => {
-    if (isPlaying) {
+  // Toggle play/pause - async to properly handle resumePlayback
+  const togglePlay = useCallback(async () => {
+    // Check actual playback state from library to avoid sync issues
+    const actuallyPlaying = musicLibrary.isCurrentlyPlaying();
+
+    if (actuallyPlaying) {
+      // Currently playing - pause it
       musicLibrary.pausePlayback();
-      setIsPlaying(false);
+      // Note: playback listener will update isPlaying state
+    } else if (currentTrack && musicLibrary.getCurrentTrackId() === currentTrack.id) {
+      // Have a track loaded that matches - resume it
+      await musicLibrary.resumePlayback();
+      // Note: playback listener will update isPlaying state
     } else if (currentTrack) {
-      musicLibrary.resumePlayback();
-      setIsPlaying(true);
+      // Have a track but it's not the one loaded in library - play it fresh
+      await playTrack(currentTrack);
     } else if (shuffleQueue.length > 0) {
+      // No track selected - play first from shuffle queue
       const firstTrack = tracks.find(t => t.id === shuffleQueue[0]);
       if (firstTrack) {
-        playTrack(firstTrack);
+        await playTrack(firstTrack);
       }
     }
-  }, [isPlaying, currentTrack, shuffleQueue, tracks, playTrack]);
+  }, [currentTrack, shuffleQueue, tracks, playTrack]);
 
   // Reshuffle with new Hilbert curve
   const handleReshuffle = useCallback(async () => {

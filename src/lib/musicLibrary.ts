@@ -107,6 +107,9 @@ class MusicLibraryService {
   private currentAudio: HTMLAudioElement | null = null;
   private currentSession: MusicSession | null = null;
   private listeners: Set<() => void> = new Set();
+  private playbackListeners: Set<(state: { isPlaying: boolean; trackId: string | null }) => void> = new Set();
+  private currentTrackId: string | null = null;
+  private playbackStartTime: number = 0;
 
   /**
    * Initialize IndexedDB
@@ -381,11 +384,13 @@ class MusicLibraryService {
     const audioUrl = await this.getAudioUrl(trackId);
     if (!audioUrl) return null;
 
-    // Stop current playback if any
-    this.stopPlayback();
+    // Stop current playback if any - CRITICAL: prevents two songs playing
+    await this.stopPlayback();
 
     // Create audio element
     this.currentAudio = new Audio(audioUrl);
+    this.currentTrackId = trackId;
+    this.playbackStartTime = Date.now();
 
     // Create session
     const session: MusicSession = {
@@ -403,22 +408,35 @@ class MusicLibraryService {
 
     this.currentSession = session;
 
-    // Track play time
-    const startTime = Date.now();
-
+    // Add event listeners for state synchronization
     this.currentAudio.addEventListener('ended', () => {
-      this.handlePlaybackEnd(startTime, true);
+      this.handlePlaybackEnd(this.playbackStartTime, true);
+      this.notifyPlaybackState(false);
     });
 
     this.currentAudio.addEventListener('pause', () => {
       if (this.currentSession && !this.currentSession.completed) {
-        this.currentSession.duration = (Date.now() - startTime) / 1000;
+        this.currentSession.duration = (Date.now() - this.playbackStartTime) / 1000;
       }
+      this.notifyPlaybackState(false);
+    });
+
+    this.currentAudio.addEventListener('play', () => {
+      this.notifyPlaybackState(true);
+    });
+
+    // Handle errors gracefully
+    this.currentAudio.addEventListener('error', (e) => {
+      console.error('Audio playback error:', e);
+      this.notifyPlaybackState(false);
     });
 
     // Start playback
     try {
       await this.currentAudio.play();
+
+      // Notify that playback started
+      this.notifyPlaybackState(true);
 
       // Update play count
       await this.updateTrack(trackId, {
@@ -437,6 +455,8 @@ class MusicLibraryService {
       return session;
     } catch (error) {
       console.error('Failed to play track:', error);
+      this.currentTrackId = null;
+      this.notifyPlaybackState(false);
       return null;
     }
   }
@@ -469,7 +489,7 @@ class MusicLibraryService {
   }
 
   /**
-   * Stop current playback
+   * Stop current playback - completely stops and cleans up
    */
   async stopPlayback(): Promise<MusicSession | null> {
     if (this.currentAudio) {
@@ -477,35 +497,67 @@ class MusicLibraryService {
         ? new Date(this.currentSession.startedAt).getTime()
         : Date.now();
 
+      // Remove event listeners before stopping to prevent duplicate events
+      this.currentAudio.onended = null;
+      this.currentAudio.onpause = null;
+      this.currentAudio.onplay = null;
+      this.currentAudio.onerror = null;
+
       this.currentAudio.pause();
       await this.handlePlaybackEnd(startTime, false);
 
       URL.revokeObjectURL(this.currentAudio.src);
       this.currentAudio = null;
+      this.currentTrackId = null;
 
       const session = this.currentSession;
       this.currentSession = null;
+
+      this.notifyPlaybackState(false);
       return session;
     }
     return null;
   }
 
   /**
-   * Pause playback
+   * Pause playback - keeps track loaded for resuming
    */
   pausePlayback(): void {
-    if (this.currentAudio) {
+    if (this.currentAudio && !this.currentAudio.paused) {
       this.currentAudio.pause();
+      // Note: pause event listener will call notifyPlaybackState(false)
     }
   }
 
   /**
-   * Resume playback
+   * Resume playback - continues from where it left off
    */
-  resumePlayback(): void {
-    if (this.currentAudio) {
-      this.currentAudio.play();
+  async resumePlayback(): Promise<boolean> {
+    if (this.currentAudio && this.currentAudio.paused) {
+      try {
+        await this.currentAudio.play();
+        // Note: play event listener will call notifyPlaybackState(true)
+        return true;
+      } catch (error) {
+        console.error('Failed to resume playback:', error);
+        return false;
+      }
     }
+    return false;
+  }
+
+  /**
+   * Check if currently playing
+   */
+  isCurrentlyPlaying(): boolean {
+    return this.currentAudio !== null && !this.currentAudio.paused;
+  }
+
+  /**
+   * Get current track ID
+   */
+  getCurrentTrackId(): string | null {
+    return this.currentTrackId;
   }
 
   /**
@@ -822,8 +874,22 @@ class MusicLibraryService {
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * Subscribe to playback state changes
+   * Called whenever play/pause state changes
+   */
+  subscribeToPlayback(listener: (state: { isPlaying: boolean; trackId: string | null }) => void): () => void {
+    this.playbackListeners.add(listener);
+    return () => this.playbackListeners.delete(listener);
+  }
+
   private notifyListeners(): void {
     this.listeners.forEach(listener => listener());
+  }
+
+  private notifyPlaybackState(isPlaying: boolean): void {
+    const state = { isPlaying, trackId: this.currentTrackId };
+    this.playbackListeners.forEach(listener => listener(state));
   }
 }
 
