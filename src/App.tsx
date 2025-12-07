@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
-  CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Moon, Copy, Timer
+  CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer
 } from 'lucide-react';
 import { GoogleCalendarService } from './lib/googleCalendar';
 
