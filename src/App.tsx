@@ -3,7 +3,7 @@ import {
   Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
   CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer,
-  Activity, TrendingUp, AlertTriangle, Gauge, FileText, Settings
+  Activity, TrendingUp, AlertTriangle, Gauge, FileText, Settings, Bell, BarChart3, Music
 } from 'lucide-react';
 import { GoogleCalendarService } from './lib/googleCalendar';
 import { getDeltaHVState } from './lib/deltaHVEngine';
@@ -13,6 +13,11 @@ import { RhythmState, createRhythmStateEngine } from './lib/rhythmStateEngine';
 import type { RhythmStateEngine, RhythmStateInfo } from './lib/rhythmStateEngine';
 import { createRhythmPlanner, DEFAULT_PREFERENCES } from './lib/rhythmPlanner';
 import type { RhythmPlanner, PlannerSuggestion, PlannerPreferences, CalendarServiceInterface } from './lib/rhythmPlanner';
+import { notificationService } from './lib/notificationService';
+import type { NotificationPreferences, PermissionStatus } from './lib/notificationService';
+import { musicLibrary, EMOTIONAL_CATEGORIES, type EmotionalCategoryId } from './lib/musicLibrary';
+import { AnalyticsPage } from './components/AnalyticsPage';
+import { MusicLibrary } from './components/MusicLibrary';
 
 // Storage safety shim
 declare global {
@@ -185,6 +190,18 @@ export default function App() {
   const [plannerPreferences, setPlannerPreferences] = useState<PlannerPreferences>(DEFAULT_PREFERENCES);
   const [plannerSettingsOpen, setPlannerSettingsOpen] = useState(false);
 
+  // Notifications & Analytics
+  const [notificationPermission, setNotificationPermission] = useState<PermissionStatus>(notificationService.getPermissionStatus());
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreferences>(notificationService.getPreferences());
+  const [notificationSettingsOpen, setNotificationSettingsOpen] = useState(false);
+
+  // Navigation & Views
+  const [currentView, setCurrentView] = useState<'dashboard' | 'analytics'>('dashboard');
+
+  // Music Library
+  const [musicLibraryOpen, setMusicLibraryOpen] = useState(false);
+  const [dailyMusicEmotion, setDailyMusicEmotion] = useState<EmotionalCategoryId | null>(null);
+
   // Load data with safe storage
   useEffect(() => {
     const load = async () => {
@@ -231,11 +248,18 @@ export default function App() {
     }
   }, [checkIns, journals, rhythmProfile, isLoading]);
 
-  // Initialize Audit Log, Rhythm State Engine, and Planner (Phase 2, 3 & 4)
+  // Initialize Audit Log, Rhythm State Engine, Planner, and Music Library (Phase 2, 3, 4 & 5)
   useEffect(() => {
     const initSystems = async () => {
       // Initialize audit log
       await auditLog.initialize();
+
+      // Initialize music library and load daily preference
+      await musicLibrary.initialize();
+      const dailyPref = await musicLibrary.getTodayPreference();
+      if (dailyPref) {
+        setDailyMusicEmotion(dailyPref.selectedCategoryId);
+      }
 
       // Create rhythm state engine once profile is loaded
       if (rhythmProfile.setupComplete && !rhythmEngineRef.current) {
@@ -299,6 +323,63 @@ export default function App() {
       plannerRef.current.updateWaves(rhythmProfile.waves);
     }
   }, [checkIns, rhythmProfile]);
+
+  // Notification integration
+  useEffect(() => {
+    // Subscribe to permission changes
+    const unsubPermission = notificationService.subscribeToPermission((status) => {
+      setNotificationPermission(status);
+    });
+
+    // Subscribe to planner suggestions for notifications
+    const handleSuggestion = (suggestion: PlannerSuggestion) => {
+      if (!notificationPrefs.enabled) return;
+
+      if (suggestion.type === 'BREAK_NEEDED' && notificationPrefs.breakReminders) {
+        const focusDuration = suggestion.action?.payload?.focusDuration || 90;
+        const breakDuration = suggestion.action?.payload?.durationMinutes || 15;
+        notificationService.sendBreakReminder(focusDuration, breakDuration);
+      }
+
+      if (suggestion.type === 'ANCHOR_REMINDER' && notificationPrefs.anchorReminders) {
+        const taskName = suggestion.description.match(/"([^"]+)"/)?.[1] || 'Anchor';
+        const minutes = parseInt(suggestion.description.match(/(\d+) minutes/)?.[1] || '15');
+        notificationService.sendAnchorReminder(taskName, minutes, suggestion.action?.payload?.anchorId);
+      }
+
+      if (suggestion.type === 'FRICTION_WARNING' && notificationPrefs.frictionWarnings) {
+        const count = parseInt(suggestion.description.match(/(\d+) tasks/)?.[1] || '3');
+        notificationService.sendFrictionWarning(count);
+      }
+
+      if (suggestion.type === 'AUTO_SCHEDULED' && notificationPrefs.autoScheduledAlerts) {
+        const time = suggestion.action?.payload?.start
+          ? new Date(suggestion.action.payload.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+          : 'soon';
+        notificationService.sendAutoScheduled(suggestion.title, time);
+      }
+    };
+
+    // Connect to planner suggestions
+    if (plannerRef.current) {
+      const unsubPlanner = plannerRef.current.subscribe((suggestions) => {
+        setPlannerSuggestions(suggestions);
+        // Send notifications for new high-priority suggestions
+        suggestions.forEach(s => {
+          if (s.priority === 'high' && !s.dismissed) {
+            handleSuggestion(s);
+          }
+        });
+      });
+
+      return () => {
+        unsubPermission();
+        unsubPlanner();
+      };
+    }
+
+    return unsubPermission;
+  }, [notificationPrefs]);
 
   // Calculate DeltaHV metrics as side-effect after every log/state update
   useEffect(() => {
@@ -740,6 +821,17 @@ export default function App() {
     );
   }
 
+  // Render Analytics Page when navigated
+  if (currentView === 'analytics') {
+    return (
+      <AnalyticsPage
+        checkIns={checkIns}
+        waves={rhythmProfile.waves}
+        onBack={() => setCurrentView('dashboard')}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-blue-950 text-gray-100 p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -828,6 +920,54 @@ export default function App() {
                 )}
               </>
             )}
+
+            {/* Notifications Button */}
+            <button
+              onClick={() => {
+                if (notificationPermission === 'default') {
+                  notificationService.requestPermission();
+                } else {
+                  setNotificationSettingsOpen(true);
+                }
+              }}
+              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 ${
+                notificationPermission === 'granted'
+                  ? 'bg-emerald-600 hover:bg-emerald-500'
+                  : notificationPermission === 'denied'
+                  ? 'bg-rose-900/50 border border-rose-700/50 text-rose-300'
+                  : 'bg-amber-600 hover:bg-amber-500'
+              }`}
+              title={notificationPermission === 'granted' ? 'Notification Settings' : 'Enable Notifications'}
+            >
+              <Bell className="w-4 h-4" />
+              {notificationPermission === 'granted' ? 'Notifications' :
+               notificationPermission === 'denied' ? 'Blocked' : 'Enable'}
+            </button>
+
+            {/* Analytics Button */}
+            <button
+              onClick={() => setCurrentView('analytics')}
+              className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-sm flex items-center gap-2"
+              title="View Analytics Dashboard"
+            >
+              <BarChart3 className="w-4 h-4" />
+              Analytics
+            </button>
+
+            {/* Music Library Button */}
+            <button
+              onClick={() => setMusicLibraryOpen(true)}
+              className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-sm flex items-center gap-2"
+              title={dailyMusicEmotion ? `Today: ${EMOTIONAL_CATEGORIES[dailyMusicEmotion].name}` : 'Music Library'}
+            >
+              <Music className="w-4 h-4" />
+              {dailyMusicEmotion ? (
+                <span className="flex items-center gap-1">
+                  <span>{EMOTIONAL_CATEGORIES[dailyMusicEmotion].icon}</span>
+                  <span>{EMOTIONAL_CATEGORIES[dailyMusicEmotion].name}</span>
+                </span>
+              ) : 'Music'}
+            </button>
           </div>
           <div className="text-sm text-gray-500 h-5">
             {saveStatus === 'saving' && 'Syncing...'}
@@ -1649,6 +1789,36 @@ export default function App() {
             onSave={(prefs) => {
               plannerRef.current?.updatePreferences(prefs);
               setPlannerSettingsOpen(false);
+            }}
+          />
+        )}
+
+        {/* Notification Settings Modal */}
+        {notificationSettingsOpen && (
+          <NotificationSettingsModal
+            preferences={notificationPrefs}
+            permissionStatus={notificationPermission}
+            platform={notificationService.getPlatform()}
+            onClose={() => setNotificationSettingsOpen(false)}
+            onSave={(prefs) => {
+              notificationService.updatePreferences(prefs);
+              setNotificationPrefs(prefs);
+              setNotificationSettingsOpen(false);
+            }}
+            onRequestPermission={async () => {
+              const status = await notificationService.requestPermission();
+              setNotificationPermission(status);
+            }}
+          />
+        )}
+
+        {/* Music Library Modal */}
+        {musicLibraryOpen && (
+          <MusicLibrary
+            onClose={() => setMusicLibraryOpen(false)}
+            onSelectTrack={(_track, emotion) => {
+              setDailyMusicEmotion(emotion);
+              setMusicLibraryOpen(false);
             }}
           />
         )}
@@ -2684,6 +2854,329 @@ function PlannerSettingsModal({
             <button
               onClick={() => onSave(localPrefs)}
               className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-sm font-medium"
+            >
+              Save Settings
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Notification Settings Modal
+ * Configure notification preferences and request permissions
+ */
+function NotificationSettingsModal({
+  preferences,
+  permissionStatus,
+  platform,
+  onClose,
+  onSave,
+  onRequestPermission
+}: {
+  preferences: NotificationPreferences;
+  permissionStatus: PermissionStatus;
+  platform: { isIOS: boolean; isAndroid: boolean; isPWA: boolean; supportsNotifications: boolean };
+  onClose: () => void;
+  onSave: (prefs: NotificationPreferences) => void;
+  onRequestPermission: () => Promise<void>;
+}) {
+  const [localPrefs, setLocalPrefs] = useState<NotificationPreferences>(preferences);
+  const [requesting, setRequesting] = useState(false);
+
+  const updatePref = <K extends keyof NotificationPreferences>(key: K, value: NotificationPreferences[K]) => {
+    setLocalPrefs(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleRequestPermission = async () => {
+    setRequesting(true);
+    await onRequestPermission();
+    setRequesting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="w-full max-w-lg bg-gray-950 border border-gray-800 rounded-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-800">
+          <div className="flex items-center gap-3">
+            <Bell className="w-6 h-6 text-amber-400" />
+            <div>
+              <h2 className="text-xl font-light">Notification Settings</h2>
+              <p className="text-xs text-gray-500">Configure alerts and reminders</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg bg-gray-900/70 border border-gray-800 hover:bg-gray-800"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-4 space-y-6 max-h-[70vh] overflow-y-auto">
+          {/* Permission Status */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-gray-300">Permission Status</h3>
+
+            {permissionStatus === 'granted' && (
+              <div className="rounded-lg bg-emerald-950/30 border border-emerald-700/40 p-3 text-sm text-emerald-300 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4" />
+                Notifications enabled
+              </div>
+            )}
+
+            {permissionStatus === 'denied' && (
+              <div className="rounded-lg bg-rose-950/30 border border-rose-700/40 p-3 text-sm text-rose-300">
+                <AlertTriangle className="w-4 h-4 inline mr-2" />
+                Notifications blocked
+                <p className="text-xs mt-2 text-gray-400">
+                  {platform.isIOS
+                    ? notificationService.getIOSInstructions()
+                    : platform.isAndroid
+                    ? notificationService.getAndroidInstructions()
+                    : 'To enable, click the lock icon in your browser\'s address bar and allow notifications.'}
+                </p>
+              </div>
+            )}
+
+            {permissionStatus === 'default' && (
+              <div className="space-y-3">
+                <div className="rounded-lg bg-amber-950/30 border border-amber-700/40 p-3 text-sm text-amber-300">
+                  <Bell className="w-4 h-4 inline mr-2" />
+                  Notifications not yet enabled
+                  {platform.isIOS && !platform.isPWA && (
+                    <p className="text-xs mt-2 text-gray-400">
+                      {notificationService.getIOSInstructions()}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={handleRequestPermission}
+                  disabled={requesting}
+                  className="w-full px-4 py-3 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
+                >
+                  {requesting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Requesting...
+                    </>
+                  ) : (
+                    <>
+                      <Bell className="w-4 h-4" />
+                      Enable Notifications
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {permissionStatus === 'unsupported' && (
+              <div className="rounded-lg bg-gray-900/50 border border-gray-700 p-3 text-sm text-gray-400">
+                <AlertTriangle className="w-4 h-4 inline mr-2" />
+                Notifications not supported on this browser/device
+              </div>
+            )}
+          </div>
+
+          {/* Notification Types */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+              <Settings className="w-4 h-4 text-gray-400" />
+              Notification Types
+            </h3>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">Master Toggle</p>
+                <p className="text-xs text-gray-500">Enable/disable all notifications</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.enabled}
+                onChange={(e) => updatePref('enabled', e.target.checked)}
+                className="rounded w-5 h-5"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">⚓ Anchor Reminders</p>
+                <p className="text-xs text-gray-500">Alerts before scheduled anchors</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.anchorReminders}
+                onChange={(e) => updatePref('anchorReminders', e.target.checked)}
+                disabled={!localPrefs.enabled}
+                className="rounded w-5 h-5"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">💤 Break Reminders</p>
+                <p className="text-xs text-gray-500">Alerts to take breaks after focus</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.breakReminders}
+                onChange={(e) => updatePref('breakReminders', e.target.checked)}
+                disabled={!localPrefs.enabled}
+                className="rounded w-5 h-5"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">🎯 Focus Alerts</p>
+                <p className="text-xs text-gray-500">Notifications for focus sessions</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.focusAlerts}
+                onChange={(e) => updatePref('focusAlerts', e.target.checked)}
+                disabled={!localPrefs.enabled}
+                className="rounded w-5 h-5"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">⚡ Friction Warnings</p>
+                <p className="text-xs text-gray-500">Alerts when tasks are overdue</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.frictionWarnings}
+                onChange={(e) => updatePref('frictionWarnings', e.target.checked)}
+                disabled={!localPrefs.enabled}
+                className="rounded w-5 h-5"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">📅 Auto-Scheduled Events</p>
+                <p className="text-xs text-gray-500">Alerts for auto-scheduled calendar events</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.autoScheduledAlerts}
+                onChange={(e) => updatePref('autoScheduledAlerts', e.target.checked)}
+                disabled={!localPrefs.enabled}
+                className="rounded w-5 h-5"
+              />
+            </label>
+          </div>
+
+          {/* Quiet Hours */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-blue-400" />
+              Quiet Hours
+            </h3>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">Enable Quiet Hours</p>
+                <p className="text-xs text-gray-500">Silence notifications during set times</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.quietHoursEnabled}
+                onChange={(e) => updatePref('quietHoursEnabled', e.target.checked)}
+                disabled={!localPrefs.enabled}
+                className="rounded w-5 h-5"
+              />
+            </label>
+
+            {localPrefs.quietHoursEnabled && (
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800">
+                <span className="text-sm text-gray-400">From</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="23"
+                  value={localPrefs.quietHoursStart}
+                  onChange={(e) => updatePref('quietHoursStart', parseInt(e.target.value) || 22)}
+                  className="w-16 px-2 py-1 rounded bg-gray-800 border border-gray-700 text-sm text-center"
+                />
+                <span className="text-sm text-gray-400">to</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="23"
+                  value={localPrefs.quietHoursEnd}
+                  onChange={(e) => updatePref('quietHoursEnd', parseInt(e.target.value) || 7)}
+                  className="w-16 px-2 py-1 rounded bg-gray-800 border border-gray-700 text-sm text-center"
+                />
+                <span className="text-sm text-gray-500">(24h)</span>
+              </div>
+            )}
+          </div>
+
+          {/* Sound & Vibration */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+              <Volume2 className="w-4 h-4 text-purple-400" />
+              Sound & Vibration
+            </h3>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">Sound</p>
+                <p className="text-xs text-gray-500">Play sound with notifications</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.soundEnabled}
+                onChange={(e) => updatePref('soundEnabled', e.target.checked)}
+                disabled={!localPrefs.enabled}
+                className="rounded w-5 h-5"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 rounded-lg bg-gray-900/50 border border-gray-800 cursor-pointer hover:bg-gray-900/70">
+              <div>
+                <p className="text-sm font-medium">Vibration</p>
+                <p className="text-xs text-gray-500">Vibrate on mobile devices</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localPrefs.vibrationEnabled}
+                onChange={(e) => updatePref('vibrationEnabled', e.target.checked)}
+                disabled={!localPrefs.enabled}
+                className="rounded w-5 h-5"
+              />
+            </label>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between p-4 border-t border-gray-800 bg-gray-900/30">
+          <button
+            onClick={() => {
+              notificationService.sendBreakReminder(60, 10);
+            }}
+            className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm text-gray-400"
+            disabled={permissionStatus !== 'granted'}
+          >
+            Test Notification
+          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onSave(localPrefs)}
+              className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-sm font-medium"
             >
               Save Settings
             </button>

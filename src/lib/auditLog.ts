@@ -65,6 +65,12 @@ export type AuditActionType =
   | 'AI_INTERVENTION'
   | 'AUTO_SCHEDULE'
   | 'AUTO_BREAK_INSERTED'
+  // Music Library Actions
+  | 'MUSIC_TRACK_IMPORTED'
+  | 'MUSIC_TRACK_DELETED'
+  | 'MUSIC_SESSION_STARTED'
+  | 'MUSIC_SESSION_COMPLETED'
+  | 'MUSIC_SESSION_SKIPPED'
   // System Actions
   | 'SYSTEM_INIT'
   | 'PROFILE_UPDATED'
