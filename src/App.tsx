@@ -1,40 +1,26 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  Dumbbell, Brain, Heart, Shield, NotebookPen, Download, 
-  Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2, 
-  CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Moon, Copy, Timer
+  Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
+  Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
+  CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer
 } from 'lucide-react';
 
-// Storage safety shim
-declare global {
-  interface Window {
-    storage?: {
-      get: (k: string) => Promise<{ value: string } | null>;
-      set: (k: string, v: string) => Promise<void>;
-    };
-  }
-}
-
+// localStorage-only storage implementation
 const storageGet = async (key: string): Promise<string | null> => {
   try {
-    if (window.storage && typeof window.storage.get === 'function') {
-      const res = await window.storage.get(key);
-      return res?.value ?? null;
-    }
     return localStorage.getItem(key);
-  } catch {
+  } catch (error) {
+    console.error('Storage get error:', error);
     return null;
   }
 };
 
 const storageSet = async (key: string, value: string) => {
   try {
-    if (window.storage && typeof window.storage.set === 'function') {
-      await window.storage.set(key, value);
-    } else {
-      localStorage.setItem(key, value);
-    }
-  } catch {}
+    localStorage.setItem(key, value);
+  } catch (error) {
+    console.error('Storage set error:', error);
+  }
 };
 
 // Wave color class mapping for Tailwind safety
@@ -863,7 +849,7 @@ function SpiralGlyph({ size = 32 }: { size?: number }) {
   return <span style={{ fontSize: size }} className="text-amber-400">🌀</span>;
 }
 
-function RoundButton({ icon, label, onClick }: { icon: JSX.Element; label: string; onClick: () => void }) {
+function RoundButton({ icon, label, onClick }: { icon: React.ReactElement; label: string; onClick: () => void }) {
   return (
     <button onClick={onClick} className="flex flex-col items-center gap-2 group">
       <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-gray-900 to-gray-950 border-2 border-gray-800 hover:border-cyan-500 flex items-center justify-center transition-all group-hover:scale-105 overflow-hidden">
@@ -921,7 +907,7 @@ function CalendarMonth({ month, selectedDate, deviationDay, onPrev, onNext, onSe
   );
 }
 
-function WaveSetupWizard({ profile, onClose, onSave }: any) {
+function WaveSetupWizard({ profile, onClose, onSave }: { profile: RhythmProfile; onClose: () => void; onSave: (profile: RhythmProfile) => void }) {
   const [step, setStep] = useState(0);
   const [waves, setWaves] = useState(profile.waves);
   const [deviationDay, setDeviationDay] = useState(profile.deviationDay ?? 6);
@@ -1095,7 +1081,7 @@ function WaveSetupWizard({ profile, onClose, onSave }: any) {
   );
 }
 
-function WaveAnchorsModal({ waves, selectedDate, checkIns, onClose, onSetAnchor }: any) {
+function WaveAnchorsModal({ waves, selectedDate, checkIns, onClose, onSetAnchor }: { waves: Wave[]; selectedDate: Date; checkIns: CheckIn[]; onClose: () => void; onSetAnchor: (waveId: string, task: string, note: string) => void }) {
   const [anchors, setAnchors] = useState<Record<string, {task: string; note: string}>>({});
 
   useEffect(() => {
@@ -1164,7 +1150,7 @@ function WaveAnchorsModal({ waves, selectedDate, checkIns, onClose, onSetAnchor 
   );
 }
 
-function MiniScheduler({ date, category, presetTasks, time, note, waveId, waves, onChange, onClose, onSubmit }: any) {
+function MiniScheduler({ date, category, presetTasks, time, note, waveId, waves, onChange, onClose, onSubmit }: { date: Date; category: string; presetTasks: string[]; time: string; note: string; waveId: string; waves: Wave[]; onChange: (params: { time?: string; task?: string; note?: string; waveId?: string }) => void; onClose: () => void; onSubmit: () => void }) {
   const [selectedTask, setSelectedTask] = useState<string>('');
 
   return (
@@ -1211,7 +1197,7 @@ function MiniScheduler({ date, category, presetTasks, time, note, waveId, waves,
   );
 }
 
-function JournalModal({ date, value, waveId, waves, onChange, onWaveChange, onClose, onSave }: any) {
+function JournalModal({ date, value, waveId, waves, onChange, onWaveChange, onClose, onSave }: { date: Date; value: string; waveId: string; waves: Wave[]; onChange: (value: string) => void; onWaveChange: (waveId: string) => void; onClose: () => void; onSave: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-4">
       <div className="w-full max-w-xl bg-gray-950 border border-gray-800 rounded-2xl p-5 space-y-3">
@@ -1247,7 +1233,7 @@ function JournalModal({ date, value, waveId, waves, onChange, onWaveChange, onCl
   );
 }
 
-function GeneralNoteModal({ date, text, time, onChangeText, onChangeTime, onClose, onSave }: any) {
+function GeneralNoteModal({ date, text, time, onChangeText, onChangeTime, onClose, onSave }: { date: Date; text: string; time: string; onChangeText: (text: string) => void; onChangeTime: (time: string) => void; onClose: () => void; onSave: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-4">
       <div className="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl p-5 space-y-3">
@@ -1270,7 +1256,7 @@ function GeneralNoteModal({ date, text, time, onChangeText, onChangeTime, onClos
   );
 }
 
-function ToneMixer({ freqs, playing, onChangeFreq, onToggle, onClose }: any) {
+function ToneMixer({ freqs, playing, onChangeFreq, onToggle, onClose }: { freqs: number[]; playing: boolean; onChangeFreq: (i: number, v: number) => void; onToggle: () => void; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-4">
       <div className="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl p-5 space-y-4">
