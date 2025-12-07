@@ -28,7 +28,14 @@ export type NotificationType =
   | 'rhythm_state_change'
   | 'daily_summary'
   | 'music_reminder'
-  | 'music_session_start';
+  | 'music_session_start'
+  // Positive improvement notifications
+  | 'streak_milestone'
+  | 'coherence_achieved'
+  | 'goal_progress'
+  | 'habit_completed'
+  | 'mood_improved'
+  | 'personal_best';
 
 /**
  * Notification payload
@@ -89,6 +96,13 @@ export interface NotificationPreferences {
   rhythmStateChanges: boolean;
   dailySummary: boolean;
   musicReminders: boolean;
+  // Positive improvement notifications
+  positiveImprovements: boolean;
+  streakMilestones: boolean;
+  goalProgress: boolean;
+  habitCompletions: boolean;
+  moodImprovements: boolean;
+  personalBests: boolean;
   quietHoursEnabled: boolean;
   quietHoursStart: number; // 24h format
   quietHoursEnd: number;
@@ -106,6 +120,13 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
   rhythmStateChanges: false, // Off by default to avoid spam
   dailySummary: true,
   musicReminders: true,
+  // Positive improvement notifications - all enabled by default
+  positiveImprovements: true,
+  streakMilestones: true,
+  goalProgress: true,
+  habitCompletions: true,
+  moodImprovements: true,
+  personalBests: true,
   quietHoursEnabled: false,
   quietHoursStart: 22,
   quietHoursEnd: 7,
@@ -168,7 +189,14 @@ const NOTIFICATION_ICONS: Record<NotificationType, string> = {
   rhythm_state_change: '🌊',
   daily_summary: '📊',
   music_reminder: '🎵',
-  music_session_start: '🎶'
+  music_session_start: '🎶',
+  // Positive improvement icons
+  streak_milestone: '🔥',
+  coherence_achieved: '🌟',
+  goal_progress: '📈',
+  habit_completed: '✨',
+  mood_improved: '🌈',
+  personal_best: '🏆'
 };
 
 /**
@@ -369,6 +397,19 @@ class NotificationService {
       case 'music_reminder':
       case 'music_session_start':
         return this.preferences.musicReminders;
+      // Positive improvement notifications
+      case 'streak_milestone':
+        return this.preferences.positiveImprovements && this.preferences.streakMilestones;
+      case 'coherence_achieved':
+        return this.preferences.positiveImprovements;
+      case 'goal_progress':
+        return this.preferences.positiveImprovements && this.preferences.goalProgress;
+      case 'habit_completed':
+        return this.preferences.positiveImprovements && this.preferences.habitCompletions;
+      case 'mood_improved':
+        return this.preferences.positiveImprovements && this.preferences.moodImprovements;
+      case 'personal_best':
+        return this.preferences.positiveImprovements && this.preferences.personalBests;
       default:
         return true;
     }
@@ -775,6 +816,129 @@ class NotificationService {
       tag: 'music-session',
       requireInteraction: true,
       data: { action: 'start_music_session', trackName, emotionCategory }
+    });
+  }
+
+  // ========================================
+  // Positive Improvement Notifications
+  // ========================================
+
+  /**
+   * Send streak milestone notification
+   * Triggered when user reaches a streak milestone
+   */
+  sendStreakMilestone(streakDays: number, streakType: string): Promise<string | null> {
+    const milestoneMessages: Record<number, string> = {
+      3: "You're building momentum!",
+      7: "One week strong! Keep it up!",
+      14: "Two weeks of consistency!",
+      21: "Three weeks - habit forming!",
+      30: "One month milestone!",
+      60: "Two months of dedication!",
+      90: "Quarter year achievement!",
+      180: "Half year champion!",
+      365: "One year legend!"
+    };
+
+    const message = milestoneMessages[streakDays] || `${streakDays} days and counting!`;
+
+    return this.show({
+      type: 'streak_milestone',
+      title: `${NOTIFICATION_ICONS.streak_milestone} ${streakDays}-Day Streak!`,
+      body: `${streakType}: ${message}`,
+      tag: 'streak-milestone',
+      data: { action: 'view_streaks', streakDays, streakType }
+    });
+  }
+
+  /**
+   * Send coherence achieved notification
+   * Triggered when user achieves coherent rhythm field state
+   */
+  sendCoherenceAchieved(coherenceScore: number, improvementPercent?: number): Promise<string | null> {
+    const body = improvementPercent
+      ? `Coherence at ${coherenceScore}% (+${improvementPercent}% improvement)`
+      : `Your rhythm field reached ${coherenceScore}% coherence`;
+
+    return this.show({
+      type: 'coherence_achieved',
+      title: `${NOTIFICATION_ICONS.coherence_achieved} Coherence Achieved!`,
+      body,
+      tag: 'coherence-achieved',
+      data: { action: 'view_metrics', coherenceScore, improvementPercent }
+    });
+  }
+
+  /**
+   * Send goal progress notification
+   * Triggered when user makes significant progress on a goal
+   */
+  sendGoalProgress(goalName: string, progressPercent: number, milestone?: string): Promise<string | null> {
+    const body = milestone
+      ? `${goalName}: ${milestone} (${progressPercent}% complete)`
+      : `${goalName}: ${progressPercent}% complete`;
+
+    return this.show({
+      type: 'goal_progress',
+      title: `${NOTIFICATION_ICONS.goal_progress} Goal Progress!`,
+      body,
+      tag: `goal-progress-${goalName}`,
+      data: { action: 'view_goals', goalName, progressPercent, milestone }
+    });
+  }
+
+  /**
+   * Send habit completed notification
+   * Triggered when user completes a habit for the day
+   */
+  sendHabitCompleted(habitName: string, completionCount?: number): Promise<string | null> {
+    const body = completionCount
+      ? `"${habitName}" completed! (${completionCount} times this week)`
+      : `You completed "${habitName}" for today!`;
+
+    return this.show({
+      type: 'habit_completed',
+      title: `${NOTIFICATION_ICONS.habit_completed} Habit Complete!`,
+      body,
+      tag: `habit-${habitName}`,
+      data: { action: 'view_habits', habitName, completionCount }
+    });
+  }
+
+  /**
+   * Send mood improved notification
+   * Triggered when user's mood shows positive change
+   */
+  sendMoodImproved(previousMood: string, currentMood: string, improvementScore?: number): Promise<string | null> {
+    const body = improvementScore
+      ? `Mood shifted from ${previousMood} to ${currentMood} (+${improvementScore})`
+      : `Your mood improved from ${previousMood} to ${currentMood}`;
+
+    return this.show({
+      type: 'mood_improved',
+      title: `${NOTIFICATION_ICONS.mood_improved} Mood Boost!`,
+      body,
+      tag: 'mood-improved',
+      data: { action: 'view_mood', previousMood, currentMood, improvementScore }
+    });
+  }
+
+  /**
+   * Send personal best notification
+   * Triggered when user achieves a new personal record
+   */
+  sendPersonalBest(metricName: string, value: number, previousBest?: number, unit?: string): Promise<string | null> {
+    const unitStr = unit ? ` ${unit}` : '';
+    const body = previousBest
+      ? `New record for ${metricName}: ${value}${unitStr} (previous: ${previousBest}${unitStr})`
+      : `New personal best for ${metricName}: ${value}${unitStr}`;
+
+    return this.show({
+      type: 'personal_best',
+      title: `${NOTIFICATION_ICONS.personal_best} Personal Best!`,
+      body,
+      tag: `personal-best-${metricName}`,
+      data: { action: 'view_achievements', metricName, value, previousBest, unit }
     });
   }
 
