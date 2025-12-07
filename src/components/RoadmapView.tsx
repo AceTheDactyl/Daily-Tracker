@@ -69,22 +69,6 @@ export const RoadmapView: React.FC<RoadmapViewProps> = ({
     }
   };
 
-  const getCategoriesForDomain = (domain: string): string[] => {
-    const mapping: Record<string, string[]> = {
-      body: ['Workout'],
-      physical: ['Workout'],
-      mind: ['Meditation', 'General'],
-      mental: ['Meditation', 'General'],
-      emotion: ['Emotion', 'Meditation'],
-      emotional: ['Emotion', 'Meditation'],
-      spirit: ['Meditation', 'Anchor'],
-      spiritual: ['Meditation', 'Anchor'],
-      social: ['Moderation', 'Emotion'],
-      creative: ['Journal', 'General'],
-    };
-    return mapping[domain] || ['General'];
-  };
-
   const toggleStep = (stepId: string) => {
     setExpandedSteps(prev => {
       const next = new Set(prev);

@@ -11,7 +11,7 @@ import {
   TrendingUp, BarChart3, Activity, Music,
   Heart, Brain, ArrowLeft, Clock, Target,
   Sparkles, Zap, Shield, Waves, AlertTriangle, CheckCircle2,
-  Plus, Play, Trash2, ChevronDown, ListMusic, Edit3, X
+  Plus, Play, Trash2, ChevronDown, ListMusic, X
 } from 'lucide-react';
 import {
   musicLibrary,
