@@ -163,11 +163,19 @@ Add build and preview scripts:
 
 ### Architecture Overview
 
-The integration should:
-- **Export beats to Google Calendar** - Create calendar events from scheduled check-ins
-- **Import calendar events** - Show Google Calendar events in the daily view
-- **Two-way sync** - Mark completed in both systems
-- **Wave tagging** - Color-code events by wave type
+The integration provides:
+- **Export beats to Google Calendar** ✅ - Create calendar events from scheduled check-ins
+- **Import calendar events** ✅ - Import Google Calendar events as beats in the daily view
+- **Two-way sync** ✅ - Auto-sync when enabled, manual import on demand
+- **Wave tagging** ✅ - Color-code events by wave type and auto-assign waves based on time
+
+### Features Implemented
+
+1. **Connect Google Calendar** - One-click OAuth authentication
+2. **Auto-sync to Calendar** - Toggle to automatically export beats to Google Calendar
+3. **Import Events** - Button to import today's Google Calendar events as beats
+4. **Wave Assignment** - Imported events automatically assigned to appropriate wave based on time
+5. **Duplicate Prevention** - Smart filtering prevents importing the same event twice
 
 ### Step 1: Setup Google Calendar API
 
@@ -593,7 +601,6 @@ pulse-check-rhythm/
 ## 📝 Future Enhancements
 
 Potential features for iteration:
-- Import events FROM Google Calendar into Pulse Check
 - Recurring anchor templates
 - Wave statistics and analytics
 - Export rhythm data to CSV/JSON
@@ -602,6 +609,7 @@ Potential features for iteration:
 - Notifications for upcoming beats
 - Multi-calendar support
 - Share rhythm templates with others
+- Real-time bidirectional sync (webhook-based)
 
 ---
 
