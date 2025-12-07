@@ -2,9 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
-  CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer
+  CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer,
+  Activity, TrendingUp, AlertTriangle, Gauge
 } from 'lucide-react';
 import { GoogleCalendarService } from './lib/googleCalendar';
+import { getDeltaHVState } from './lib/deltaHVEngine';
+import type { DeltaHVState } from './lib/deltaHVEngine';
 
 // Storage safety shim
 declare global {
@@ -159,6 +162,10 @@ export default function App() {
   const [gcalAuthed, setGcalAuthed] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(false);
 
+  // DeltaHV Metrics State
+  const [deltaHVState, setDeltaHVState] = useState<DeltaHVState | null>(null);
+  const [deltaHVExpanded, setDeltaHVExpanded] = useState(false);
+
   // Load data with safe storage
   useEffect(() => {
     const load = async () => {
@@ -204,6 +211,14 @@ export default function App() {
       save();
     }
   }, [checkIns, journals, rhythmProfile, isLoading]);
+
+  // Calculate DeltaHV metrics as side-effect after every log/state update
+  useEffect(() => {
+    if (!isLoading && rhythmProfile.setupComplete) {
+      const newDeltaHVState = getDeltaHVState(checkIns, journals, rhythmProfile, selectedDate);
+      setDeltaHVState(newDeltaHVState);
+    }
+  }, [checkIns, journals, rhythmProfile, selectedDate, isLoading]);
 
   // Initialize Google Calendar
   useEffect(() => {
@@ -647,6 +662,150 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* DeltaHV Metrics Panel */}
+        {deltaHVState && (
+          <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-2xl overflow-hidden">
+            <button
+              onClick={() => setDeltaHVExpanded(!deltaHVExpanded)}
+              className="w-full p-4 flex items-center justify-between hover:bg-gray-900/40 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  deltaHVState.fieldState === 'coherent' ? 'bg-emerald-900/60 text-emerald-400' :
+                  deltaHVState.fieldState === 'transitioning' ? 'bg-amber-900/60 text-amber-400' :
+                  deltaHVState.fieldState === 'fragmented' ? 'bg-orange-900/60 text-orange-400' :
+                  'bg-gray-800/60 text-gray-400'
+                }`}>
+                  <Activity className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium flex items-center gap-2">
+                    ΔHV Field State
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      deltaHVState.fieldState === 'coherent' ? 'bg-emerald-900/60 text-emerald-400' :
+                      deltaHVState.fieldState === 'transitioning' ? 'bg-amber-900/60 text-amber-400' :
+                      deltaHVState.fieldState === 'fragmented' ? 'bg-orange-900/60 text-orange-400' :
+                      'bg-gray-800/60 text-gray-400'
+                    }`}>
+                      {deltaHVState.fieldState}
+                    </span>
+                  </p>
+                  <p className="text-sm text-gray-400">Coherence metrics for {selectedDate.toDateString()}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className={`text-2xl font-bold ${
+                    deltaHVState.deltaHV >= 75 ? 'text-emerald-400' :
+                    deltaHVState.deltaHV >= 50 ? 'text-amber-400' :
+                    deltaHVState.deltaHV >= 25 ? 'text-orange-400' :
+                    'text-gray-400'
+                  }`}>{deltaHVState.deltaHV}</p>
+                  <p className="text-xs text-gray-500">ΔHV Score</p>
+                </div>
+                {deltaHVExpanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+              </div>
+            </button>
+
+            {deltaHVExpanded && (
+              <div className="px-4 pb-4 space-y-4 border-t border-gray-800 pt-4">
+                {/* Four Core Metrics */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {/* Symbolic Density */}
+                  <div className="bg-gray-900/60 rounded-xl p-3 border border-violet-800/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sparkles className="w-4 h-4 text-violet-400" />
+                      <span className="text-xs text-violet-300">Symbolic (S)</span>
+                    </div>
+                    <p className="text-xl font-bold text-violet-400">{deltaHVState.symbolicDensity}</p>
+                    <p className="text-xs text-gray-500">{deltaHVState.breakdown.glyphCount} glyphs, {deltaHVState.breakdown.intentionCount} intentions</p>
+                  </div>
+
+                  {/* Resonance Coupling */}
+                  <div className="bg-gray-900/60 rounded-xl p-3 border border-cyan-800/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingUp className="w-4 h-4 text-cyan-400" />
+                      <span className="text-xs text-cyan-300">Resonance (R)</span>
+                    </div>
+                    <p className="text-xl font-bold text-cyan-400">{deltaHVState.resonanceCoupling}</p>
+                    <p className="text-xs text-gray-500">{deltaHVState.breakdown.alignedTasks}/{deltaHVState.breakdown.totalPlannedTasks} aligned</p>
+                  </div>
+
+                  {/* Friction Coefficient */}
+                  <div className="bg-gray-900/60 rounded-xl p-3 border border-rose-800/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle className="w-4 h-4 text-rose-400" />
+                      <span className="text-xs text-rose-300">Friction (δφ)</span>
+                    </div>
+                    <p className="text-xl font-bold text-rose-400">{deltaHVState.frictionCoefficient}</p>
+                    <p className="text-xs text-gray-500">{deltaHVState.breakdown.missedTasks} missed, {deltaHVState.breakdown.delayedTasks} delayed</p>
+                  </div>
+
+                  {/* Harmonic Stability */}
+                  <div className="bg-gray-900/60 rounded-xl p-3 border border-emerald-800/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Gauge className="w-4 h-4 text-emerald-400" />
+                      <span className="text-xs text-emerald-300">Stability (H)</span>
+                    </div>
+                    <p className="text-xl font-bold text-emerald-400">{deltaHVState.harmonicStability}</p>
+                    <p className="text-xs text-gray-500">{Object.values(deltaHVState.breakdown.segmentCoverage).filter(Boolean).length}/{rhythmProfile.waves.length} waves active</p>
+                  </div>
+                </div>
+
+                {/* Segment Coverage Visualization */}
+                <div className="bg-gray-900/40 rounded-xl p-3 border border-gray-800">
+                  <p className="text-xs text-gray-400 mb-2">Wave Segment Coverage</p>
+                  <div className="flex gap-2">
+                    {rhythmProfile.waves.map(wave => {
+                      const isActive = deltaHVState.breakdown.segmentCoverage[wave.id];
+                      const colors = waveColorClasses[wave.color];
+                      return (
+                        <div
+                          key={wave.id}
+                          className={`flex-1 h-8 rounded-lg flex items-center justify-center text-xs font-medium transition-all ${
+                            isActive ? `${colors.bg} ${colors.text} border ${colors.border}` : 'bg-gray-800/40 text-gray-600 border border-gray-800'
+                          }`}
+                          title={`${wave.name}: ${isActive ? 'Active' : 'Inactive'}`}
+                        >
+                          {wave.name.split(' ')[0]}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ΔHV Score Interpretation */}
+                <div className={`rounded-xl p-3 border ${
+                  deltaHVState.fieldState === 'coherent' ? 'bg-emerald-950/30 border-emerald-800/30' :
+                  deltaHVState.fieldState === 'transitioning' ? 'bg-amber-950/30 border-amber-800/30' :
+                  deltaHVState.fieldState === 'fragmented' ? 'bg-orange-950/30 border-orange-800/30' :
+                  'bg-gray-900/40 border-gray-800'
+                }`}>
+                  <p className="text-sm">
+                    {deltaHVState.fieldState === 'coherent' && (
+                      <span className="text-emerald-300">🌟 Your field is highly coherent. Maintain momentum and consider optimizing for peak performance.</span>
+                    )}
+                    {deltaHVState.fieldState === 'transitioning' && (
+                      <span className="text-amber-300">🔄 You're transitioning between states. Stay consistent with your rhythm to build coherence.</span>
+                    )}
+                    {deltaHVState.fieldState === 'fragmented' && (
+                      <span className="text-orange-300">⚡ Some fragmentation detected. Focus on completing planned tasks and grounding activities.</span>
+                    )}
+                    {deltaHVState.fieldState === 'dormant' && (
+                      <span className="text-gray-300">💤 Field is dormant. Start with small symbolic actions like journaling or completing one anchor task.</span>
+                    )}
+                  </p>
+                </div>
+
+                {/* Formula Reference */}
+                <div className="text-xs text-gray-500 flex flex-wrap gap-3 justify-center">
+                  <span>ΔHV = S(20%) + R(30%) + (100-δφ)(25%) + H(25%)</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Wave Anchors - Expandable */}
         {anchorsExpanded && (
