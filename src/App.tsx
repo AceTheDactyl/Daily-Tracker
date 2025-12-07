@@ -241,9 +241,21 @@ export default function App() {
       const start = new Date(checkIn.slot);
       const end = new Date(start.getTime() + 30 * 60000); // 30 min default
 
+      // Build comprehensive description
+      const wave = rhythmProfile.waves.find(w => w.id === checkIn.waveId);
+      const descriptionParts = [
+        `📋 Category: ${checkIn.category}`,
+        `🎯 Task: ${checkIn.task}`,
+        wave ? `🌊 Wave: ${wave.name} (${wave.description})` : '',
+        checkIn.note ? `📝 Note: ${checkIn.note}` : '',
+        checkIn.isAnchor ? '⚡ Daily Anchor Beat' : '',
+        `🕐 Scheduled: ${formatTime(start)}`,
+        `\n🔗 Synced from Pulse Check Rhythm`
+      ].filter(Boolean).join('\n');
+
       await gcalService.createEvent({
-        summary: `${checkIn.category}: ${checkIn.task}`,
-        description: checkIn.note || '',
+        summary: `${getCategoryIcon(checkIn.category)} ${checkIn.task}`,
+        description: descriptionParts,
         start: start.toISOString(),
         end: end.toISOString(),
         colorId: getGoogleCalendarColor(checkIn.waveId),
@@ -251,6 +263,20 @@ export default function App() {
     } catch (error) {
       console.error('Failed to sync to Google Calendar:', error);
     }
+  };
+
+  const getCategoryIcon = (category: string): string => {
+    const icons: Record<string, string> = {
+      'Workout': '💪',
+      'Moderation': '🛡️',
+      'Meditation': '🧘',
+      'Emotion': '💜',
+      'Journal': '📓',
+      'Med': '💊',
+      'Anchor': '⚡',
+      'General': '📌'
+    };
+    return icons[category] || '📌';
   };
 
   const getGoogleCalendarColor = (waveId?: string): string => {
@@ -1113,6 +1139,35 @@ function CalendarMonth({ month, selectedDate, deviationDay, checkIns, onPrev, on
     return checkIns.filter(c => sameDay(new Date(c.slot), d));
   };
 
+  const getCategoryColor = (category: string): string => {
+    const colors: Record<string, string> = {
+      'Workout': 'bg-pink-500',
+      'Moderation': 'bg-cyan-500',
+      'Meditation': 'bg-green-500',
+      'Emotion': 'bg-purple-500',
+      'Journal': 'bg-emerald-500',
+      'Med': 'bg-indigo-500',
+      'Anchor': 'bg-amber-500',
+      'General': 'bg-gray-500'
+    };
+    return colors[category] || 'bg-blue-500';
+  };
+
+  const getBeatsBreakdown = (beats: CheckIn[]) => {
+    const breakdown: Record<string, { upcoming: number; completed: number; color: string }> = {};
+    beats.forEach(beat => {
+      if (!breakdown[beat.category]) {
+        breakdown[beat.category] = { upcoming: 0, completed: 0, color: getCategoryColor(beat.category) };
+      }
+      if (beat.done) {
+        breakdown[beat.category].completed++;
+      } else {
+        breakdown[beat.category].upcoming++;
+      }
+    });
+    return breakdown;
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
@@ -1120,6 +1175,19 @@ function CalendarMonth({ month, selectedDate, deviationDay, checkIns, onPrev, on
         <div className="text-sm text-gray-300">{month.toLocaleString(undefined,{ month:'long', year:'numeric' })}</div>
         <button onClick={onNext} className="px-3 py-1.5 rounded-lg bg-gray-900/70 border border-gray-800 hover:bg-gray-800">{'>'}</button>
       </div>
+
+      {/* Legend */}
+      <div className="mb-3 p-2 bg-gray-900/40 rounded-lg border border-gray-800">
+        <div className="text-xs text-gray-400 mb-1">Beat Categories:</div>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-pink-500"></div><span>Workout</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-cyan-500"></div><span>Moderation</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-500"></div><span>Meditation</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-500"></div><span>Emotion</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500"></div><span>Anchor</span></div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-7 gap-1 text-center text-xs text-gray-400 mb-1">
         {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(w => <div key={w}>{w}</div>)}
       </div>
@@ -1129,23 +1197,32 @@ function CalendarMonth({ month, selectedDate, deviationDay, checkIns, onPrev, on
           const active = sameDay(d, selectedDate);
           const isDeviation = d.getDay() === deviationDay;
           const dayBeats = getBeatsForDay(d);
-          const upcomingCount = dayBeats.filter(b => !b.done).length;
-          const completedCount = dayBeats.filter(b => b.done).length;
+          const breakdown = getBeatsBreakdown(dayBeats);
 
           return (
             <button key={i} onClick={()=>onSelect(d)}
               className={`relative aspect-square rounded-lg border text-sm ${disabled?'text-gray-600 border-gray-800 bg-gray-950/40':'text-gray-200 border-gray-800 bg-gray-900/60 hover:bg-gray-800/60'} ${active?'!border-cyan-500 !bg-cyan-600 !text-black':''} ${isDeviation && !disabled?'!border-orange-500/50':''}`}
             >
-              <div className="flex flex-col items-center justify-center h-full">
-                <span>{d.getDate()}</span>
+              <div className="flex flex-col items-center justify-center h-full p-0.5">
+                <span className="font-medium">{d.getDate()}</span>
                 {!disabled && dayBeats.length > 0 && (
-                  <div className="flex gap-0.5 mt-0.5">
-                    {upcomingCount > 0 && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" title={`${upcomingCount} upcoming`}></div>
-                    )}
-                    {completedCount > 0 && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-green-400" title={`${completedCount} completed`}></div>
-                    )}
+                  <div className="flex flex-wrap gap-0.5 justify-center mt-0.5 w-full">
+                    {Object.entries(breakdown).map(([category, data]) => (
+                      <div key={category} className="flex items-center gap-px">
+                        {data.upcoming > 0 && (
+                          <div
+                            className={`w-1.5 h-1.5 rounded-full ${data.color} opacity-60`}
+                            title={`${category}: ${data.upcoming} upcoming`}
+                          ></div>
+                        )}
+                        {data.completed > 0 && (
+                          <div
+                            className={`w-1.5 h-1.5 rounded-full ${data.color}`}
+                            title={`${category}: ${data.completed} completed`}
+                          ></div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
