@@ -2,13 +2,15 @@
  * Analytics Page
  *
  * Comprehensive analytics dashboard accessible via navigation.
- * Includes rhythm patterns, music meditation metrics, and emotional coherence tracking.
+ * Includes rhythm patterns, music meditation metrics, emotional coherence tracking,
+ * and full DeltaHV metrics integration with neural map visualization.
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp, BarChart3, Activity, Music,
-  Heart, Brain, ArrowLeft, Clock, Target
+  Heart, Brain, ArrowLeft, Clock, Target,
+  Sparkles, Zap, Shield, Waves, AlertTriangle, CheckCircle2
 } from 'lucide-react';
 import {
   musicLibrary,
@@ -17,6 +19,9 @@ import {
   type MusicSession
 } from '../lib/musicLibrary';
 import { MusicLibrary } from './MusicLibrary';
+import { metricsHub, type EnhancedDeltaHVState, type MetricsSnapshot as HubMetricsSnapshot } from '../lib/metricsHub';
+import { userProfileService, type MetricsSnapshot as ProfileMetricsSnapshot } from '../lib/userProfile';
+import type { DeltaHVState } from '../lib/deltaHVEngine';
 
 // Types
 interface CheckIn {
@@ -40,6 +45,7 @@ interface AnalyticsPageProps {
   checkIns: CheckIn[];
   waves: Wave[];
   onBack: () => void;
+  deltaHV?: DeltaHVState | null;
 }
 
 // Color mapping
@@ -272,14 +278,334 @@ function StatCard({
 }
 
 /**
+ * DeltaHV Metric Display Card
+ */
+function DeltaHVCard({
+  metric,
+  value,
+  regions,
+  color
+}: {
+  metric: 'symbolic' | 'resonance' | 'friction' | 'stability';
+  value: number;
+  regions: Array<{ glyph: string; name: string; active: boolean }>;
+  color: string;
+}) {
+  const labels = {
+    symbolic: { name: 'Symbolic (S)', desc: 'Meaning & intention density', icon: Sparkles },
+    resonance: { name: 'Resonance (R)', desc: 'Alignment with rhythm', icon: Waves },
+    friction: { name: 'Friction (δφ)', desc: 'Resistance in flow', icon: Zap },
+    stability: { name: 'Stability (H)', desc: 'Harmonic coherence', icon: Shield },
+  };
+
+  const { name, desc, icon: Icon } = labels[metric];
+
+  return (
+    <div className="rounded-xl bg-gray-900/60 border border-gray-800 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className={`p-2 rounded-lg bg-${color}-500/20`}>
+            <Icon className={`w-5 h-5 text-${color}-400`} />
+          </div>
+          <div>
+            <p className="font-medium text-sm">{name}</p>
+            <p className="text-xs text-gray-500">{desc}</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className={`text-2xl font-bold text-${color}-400`}>{value}</p>
+          <p className="text-xs text-gray-500">/100</p>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500`}
+          style={{ width: `${value}%`, backgroundColor: `var(--color-${color}-500, ${COLORS[color as keyof typeof COLORS] || COLORS.cyan})` }}
+        />
+      </div>
+
+      {/* Brain regions */}
+      <div className="flex flex-wrap gap-1">
+        {regions.map((region, i) => (
+          <span
+            key={i}
+            className={`text-xs px-2 py-0.5 rounded-full ${
+              region.active
+                ? `bg-${color}-500/30 text-${color}-300`
+                : 'bg-gray-800/50 text-gray-600'
+            }`}
+            title={region.name}
+          >
+            {region.glyph}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Neural Map Visualization
+ */
+function NeuralMapViz({
+  metricsState
+}: {
+  metricsState: EnhancedDeltaHVState | null;
+}) {
+  if (!metricsState) {
+    return (
+      <div className="text-center py-12 text-gray-500">
+        <Brain className="w-12 h-12 mx-auto mb-3 opacity-30" />
+        <p>No neural activity data available</p>
+        <p className="text-xs mt-1">Complete tasks and engage with the app to see brain region activation</p>
+      </div>
+    );
+  }
+
+  const { brainActivation, fieldState, deltaHV } = metricsState;
+
+  const fieldColors = {
+    coherent: 'from-emerald-500/20 to-cyan-500/20 border-emerald-500/50',
+    transitioning: 'from-amber-500/20 to-yellow-500/20 border-amber-500/50',
+    fragmented: 'from-rose-500/20 to-red-500/20 border-rose-500/50',
+    dormant: 'from-gray-500/20 to-gray-600/20 border-gray-500/50',
+  };
+
+  const allRegions = [
+    { metric: 'symbolic', label: 'Symbolic Density', color: 'purple', regions: brainActivation.symbolic },
+    { metric: 'resonance', label: 'Resonance Coupling', color: 'cyan', regions: brainActivation.resonance },
+    { metric: 'friction', label: 'Friction Points', color: 'amber', regions: brainActivation.friction },
+    { metric: 'stability', label: 'Harmonic Stability', color: 'emerald', regions: brainActivation.stability },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Field State Overview */}
+      <div className={`rounded-xl p-6 bg-gradient-to-br ${fieldColors[fieldState]} border text-center`}>
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <Brain className="w-8 h-8" />
+          <span className="text-2xl font-bold">{deltaHV}</span>
+          <span className="text-sm text-gray-400">/100</span>
+        </div>
+        <p className="text-lg font-medium capitalize">{fieldState} Field</p>
+        <p className="text-xs text-gray-400 mt-1">
+          {fieldState === 'coherent' && 'High alignment between intention and action'}
+          {fieldState === 'transitioning' && 'Building momentum toward coherence'}
+          {fieldState === 'fragmented' && 'Multiple focus points, scattered energy'}
+          {fieldState === 'dormant' && 'Low activity, awaiting engagement'}
+        </p>
+      </div>
+
+      {/* Brain Region Grid */}
+      <div className="grid md:grid-cols-2 gap-4">
+        {allRegions.map(({ metric, label, color, regions }) => (
+          <div
+            key={metric}
+            className={`rounded-xl bg-gray-900/50 border border-gray-800 p-4`}
+          >
+            <h4 className={`text-sm font-medium text-${color}-400 mb-3`}>{label}</h4>
+            {regions.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {regions.map((region, i) => (
+                  <span
+                    key={i}
+                    className={`px-3 py-1.5 rounded-lg bg-${color}-500/20 text-${color}-300 text-sm`}
+                  >
+                    {region}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 italic">No active regions</p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Source Contributions */}
+      <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
+        <h4 className="text-sm font-medium text-gray-300 mb-3">Metric Sources</h4>
+        <div className="space-y-2">
+          {metricsState.sources.map(source => (
+            <div key={source.id} className="flex items-center justify-between text-sm">
+              <span className="text-gray-400">{source.name}</span>
+              <span className="text-gray-300">{Math.round(source.weight * 100)}% weight</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Music Influence */}
+      {metricsState.musicInfluence && (
+        <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
+          <h4 className="text-sm font-medium text-purple-400 mb-3">🎵 Music Influence</h4>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-gray-500">Skip Ratio</p>
+              <p className={metricsState.musicInfluence.skipRatio > 0.5 ? 'text-amber-400' : 'text-emerald-400'}>
+                {Math.round(metricsState.musicInfluence.skipRatio * 100)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-500">Authorship Score</p>
+              <p className="text-cyan-400">{Math.round(metricsState.musicInfluence.authorshipScore)}</p>
+            </div>
+            <div>
+              <p className="text-gray-500">Healing Progress</p>
+              <p className="text-pink-400">{Math.round(metricsState.musicInfluence.healingProgress)}%</p>
+            </div>
+            <div>
+              <p className="text-gray-500">Emotional Trajectory</p>
+              <p className="text-purple-400 capitalize">{metricsState.musicInfluence.emotionalTrajectory}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Health Insights Panel - Detection for good AND bad health signs
+ */
+function HealthInsights({
+  metricsState,
+  profileHistory
+}: {
+  metricsState: EnhancedDeltaHVState | null;
+  profileHistory: ProfileMetricsSnapshot[];
+}) {
+  if (!metricsState) return null;
+
+  const insights: Array<{ type: 'positive' | 'warning' | 'neutral'; message: string; icon: React.ElementType }> = [];
+
+  // Check symbolic density
+  if (metricsState.symbolicDensity >= 70) {
+    insights.push({
+      type: 'positive',
+      message: 'High symbolic engagement - your intentions are clear',
+      icon: CheckCircle2
+    });
+  } else if (metricsState.symbolicDensity < 30) {
+    insights.push({
+      type: 'warning',
+      message: 'Low symbolic density - try journaling or setting intentions',
+      icon: AlertTriangle
+    });
+  }
+
+  // Check resonance
+  if (metricsState.resonanceCoupling >= 70) {
+    insights.push({
+      type: 'positive',
+      message: 'Excellent rhythm alignment - you\'re in sync with your schedule',
+      icon: CheckCircle2
+    });
+  } else if (metricsState.resonanceCoupling < 30) {
+    insights.push({
+      type: 'warning',
+      message: 'Low resonance - tasks may not align with your natural rhythm',
+      icon: AlertTriangle
+    });
+  }
+
+  // Check friction
+  if (metricsState.frictionCoefficient <= 30) {
+    insights.push({
+      type: 'positive',
+      message: 'Low friction - smooth flow through your day',
+      icon: CheckCircle2
+    });
+  } else if (metricsState.frictionCoefficient >= 70) {
+    insights.push({
+      type: 'warning',
+      message: 'High friction detected - consider simplifying or delegating',
+      icon: AlertTriangle
+    });
+  }
+
+  // Check stability
+  if (metricsState.harmonicStability >= 70) {
+    insights.push({
+      type: 'positive',
+      message: 'Strong harmonic stability - consistent patterns established',
+      icon: CheckCircle2
+    });
+  } else if (metricsState.harmonicStability < 30) {
+    insights.push({
+      type: 'warning',
+      message: 'Low stability - try establishing anchor routines',
+      icon: AlertTriangle
+    });
+  }
+
+  // Check overall coherence
+  if (metricsState.fieldState === 'coherent') {
+    insights.unshift({
+      type: 'positive',
+      message: 'You\'re in a coherent state! Excellent work maintaining balance.',
+      icon: Sparkles
+    });
+  }
+
+  // Check for positive trends in profile history
+  if (profileHistory.length >= 3) {
+    const recent = profileHistory.slice(-3);
+    const avgDeltaHV = recent.reduce((sum, s) => sum + s.deltaHV, 0) / recent.length;
+    const firstDeltaHV = recent[0].deltaHV;
+
+    if (avgDeltaHV > firstDeltaHV + 10) {
+      insights.push({
+        type: 'positive',
+        message: 'Your DeltaHV is trending upward - keep up the momentum!',
+        icon: TrendingUp
+      });
+    }
+  }
+
+  if (insights.length === 0) return null;
+
+  return (
+    <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
+      <h4 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
+        <Heart className="w-4 h-4 text-pink-400" />
+        Health Insights
+      </h4>
+      <div className="space-y-2">
+        {insights.map((insight, i) => (
+          <div
+            key={i}
+            className={`flex items-start gap-2 p-2 rounded-lg ${
+              insight.type === 'positive' ? 'bg-emerald-500/10 text-emerald-300' :
+              insight.type === 'warning' ? 'bg-amber-500/10 text-amber-300' :
+              'bg-gray-500/10 text-gray-300'
+            }`}
+          >
+            <insight.icon className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <p className="text-sm">{insight.message}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Main Analytics Page Component
  */
 export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'rhythm' | 'music' | 'coherence' | 'library'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'rhythm' | 'music' | 'coherence' | 'neural' | 'library'>('overview');
   const [timeRange, setTimeRange] = useState<7 | 14 | 30>(7);
   const [musicSessions, setMusicSessions] = useState<MusicSession[]>([]);
   const [coherenceStats, setCoherenceStats] = useState<any>(null);
   const [listeningTime, setListeningTime] = useState<Record<EmotionalCategoryId, number> | null>(null);
+
+  // Real-time metrics from metricsHub
+  const [metricsState, setMetricsState] = useState<EnhancedDeltaHVState | null>(null);
+  const [profileHistory, setProfileHistory] = useState<ProfileMetricsSnapshot[]>([]);
+  const [metricsHistory, setMetricsHistory] = useState<HubMetricsSnapshot[]>([]);
 
   // Load music data
   useEffect(() => {
@@ -296,6 +622,33 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
     };
 
     loadMusicData();
+  }, [timeRange]);
+
+  // Subscribe to real-time metrics from metricsHub
+  useEffect(() => {
+    const unsubscribe = metricsHub.subscribe((state) => {
+      setMetricsState(state);
+    });
+
+    // Get initial state
+    const initial = metricsHub.getState();
+    if (initial) setMetricsState(initial);
+
+    // Get history
+    setMetricsHistory(metricsHub.getHistory());
+
+    return unsubscribe;
+  }, []);
+
+  // Load profile history for cross-referencing
+  useEffect(() => {
+    const loadProfileData = async () => {
+      await userProfileService.initialize();
+      const history = userProfileService.getMetricsHistory(timeRange);
+      setProfileHistory(history);
+    };
+
+    loadProfileData();
   }, [timeRange]);
 
   // Calculate rhythm analytics
@@ -375,6 +728,7 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
     { id: 'rhythm', label: 'Rhythm', icon: Activity },
     { id: 'music', label: 'Music', icon: Music },
     { id: 'coherence', label: 'Coherence', icon: Heart },
+    { id: 'neural', label: 'Neural', icon: Brain },
     { id: 'library', label: 'Library', icon: Music }
   ] as const;
 
@@ -506,6 +860,72 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
                 />
               </div>
             </div>
+
+            {/* DeltaHV Metrics Section */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium flex items-center gap-2">
+                <Brain className="w-5 h-5 text-purple-400" />
+                DeltaHV Metrics (Real-Time)
+                {metricsState?.isLive && (
+                  <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full">LIVE</span>
+                )}
+              </h3>
+
+              {metricsState ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <DeltaHVCard
+                    metric="symbolic"
+                    value={metricsState.symbolicDensity}
+                    regions={metricsHub.getMetricDisplay('symbolic').regions}
+                    color="purple"
+                  />
+                  <DeltaHVCard
+                    metric="resonance"
+                    value={metricsState.resonanceCoupling}
+                    regions={metricsHub.getMetricDisplay('resonance').regions}
+                    color="cyan"
+                  />
+                  <DeltaHVCard
+                    metric="friction"
+                    value={metricsState.frictionCoefficient}
+                    regions={metricsHub.getMetricDisplay('friction').regions}
+                    color="amber"
+                  />
+                  <DeltaHVCard
+                    metric="stability"
+                    value={metricsState.harmonicStability}
+                    regions={metricsHub.getMetricDisplay('stability').regions}
+                    color="green"
+                  />
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Brain className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No real-time metrics available yet</p>
+                  <p className="text-xs mt-1">Complete tasks and activities to see your DeltaHV state</p>
+                </div>
+              )}
+            </div>
+
+            {/* Health Insights */}
+            <HealthInsights metricsState={metricsState} profileHistory={profileHistory} />
+
+            {/* Profile History Trend */}
+            {profileHistory.length > 0 && (
+              <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
+                <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                  DeltaHV History ({timeRange} days)
+                </h3>
+                <LineChart
+                  data={profileHistory.map(p => ({ label: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), value: p.deltaHV }))}
+                  width={700}
+                  height={180}
+                  color={COLORS.purple}
+                  showArea
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -743,6 +1163,84 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Neural Tab */}
+        {activeTab === 'neural' && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-light flex items-center gap-3">
+              <Brain className="w-7 h-7 text-purple-400" />
+              Neural Map
+              {metricsState?.isLive && (
+                <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full">LIVE</span>
+              )}
+            </h2>
+
+            <NeuralMapViz metricsState={metricsState} />
+
+            {/* Real-time Metrics History Chart */}
+            {metricsHistory.length > 0 && (
+              <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
+                <h3 className="text-sm font-medium text-gray-300 mb-4">Real-Time Metric Updates</h3>
+                <div className="text-xs text-gray-500 mb-2">
+                  Last {Math.min(metricsHistory.length, 50)} updates
+                </div>
+                <div className="overflow-x-auto">
+                  <div className="flex gap-1" style={{ width: `${Math.min(metricsHistory.length, 50) * 10}px` }}>
+                    {metricsHistory.slice(-50).map((snapshot, i) => (
+                      <div
+                        key={i}
+                        className="flex-shrink-0 w-2 rounded-full bg-purple-500"
+                        style={{
+                          height: `${snapshot.deltaHV}px`,
+                          opacity: (i + 1) / 50
+                        }}
+                        title={`ΔHV: ${snapshot.deltaHV} - ${snapshot.trigger}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Cross-Reference with Profile */}
+            {profileHistory.length > 0 && (
+              <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
+                <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-cyan-400" />
+                  Profile Metrics Over Time
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">Symbolic & Resonance</p>
+                    <LineChart
+                      data={profileHistory.map(p => ({
+                        label: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                        value: Math.round((p.symbolicDensity + p.resonanceCoupling) / 2)
+                      }))}
+                      width={300}
+                      height={120}
+                      color={COLORS.purple}
+                      showArea
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">Friction & Stability</p>
+                    <LineChart
+                      data={profileHistory.map(p => ({
+                        label: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                        value: Math.round((100 - p.frictionCoefficient + p.harmonicStability) / 2)
+                      }))}
+                      width={300}
+                      height={120}
+                      color={COLORS.cyan}
+                      showArea
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

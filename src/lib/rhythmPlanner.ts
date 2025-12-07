@@ -95,7 +95,17 @@ export type SuggestionType =
   | 'REFLECTION_REMINDER'
   | 'ANCHOR_REMINDER'
   | 'FRICTION_WARNING'
-  | 'AUTO_SCHEDULED';
+  | 'AUTO_SCHEDULED'
+  // New metric-aware suggestion types
+  | 'SYMBOLIC_LOW'
+  | 'SYMBOLIC_HIGH'
+  | 'RESONANCE_LOW'
+  | 'RESONANCE_HIGH'
+  | 'STABILITY_LOW'
+  | 'STABILITY_HIGH'
+  | 'COHERENT_STATE'
+  | 'POSITIVE_TREND'
+  | 'MUSIC_RECOMMENDATION';
 
 /**
  * A suggestion from the planner
@@ -824,11 +834,312 @@ export class RhythmPlanner {
     // Check for unscheduled time (suggest focus blocks)
     this.checkUnscheduledTasks(now);
 
+    // === COMPREHENSIVE METRIC-AWARE CHECKS ===
+
+    // Check symbolic density
+    this.checkSymbolicDensity();
+
+    // Check resonance coupling
+    this.checkResonanceCoupling();
+
+    // Check harmonic stability
+    this.checkHarmonicStability();
+
+    // Check for positive states (coherent field, positive trends)
+    this.checkPositiveStates();
+
     // Clean up expired suggestions
     this.cleanupSuggestions();
 
     // Notify listeners
     this.notifyListeners();
+  }
+
+  /**
+   * Check symbolic density and provide contextual suggestions
+   */
+  private checkSymbolicDensity(): void {
+    if (!this.currentMetrics) return;
+
+    const symbolic = this.currentMetrics.symbolic;
+
+    // Low symbolic density - suggest intention-setting activities
+    if (symbolic < 30) {
+      const existing = this.suggestions.find(
+        s => s.type === 'SYMBOLIC_LOW' && !s.dismissed
+      );
+      if (existing) return;
+
+      const suggestion: PlannerSuggestion = {
+        id: generateId(),
+        type: 'SYMBOLIC_LOW',
+        priority: symbolic < 20 ? 'high' : 'medium',
+        title: '✨ Symbolic Density Low',
+        description: `Your intention clarity is at ${symbolic}%. Try journaling, setting goals, or engaging in creative visualization to boost meaning.`,
+        action: {
+          type: 'navigate',
+          payload: {
+            section: 'journal',
+            metricContext: { metric: 'symbolic', value: symbolic }
+          }
+        },
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 2 * 60 * 60000).toISOString()
+      };
+
+      this.addSuggestion(suggestion);
+
+      auditLog.addEntry(
+        'AI_SUGGESTION',
+        'info',
+        `Low symbolic density detected: ${symbolic}%`,
+        { metric: 'symbolic', value: symbolic }
+      );
+    }
+
+    // High symbolic density - positive notification
+    if (symbolic >= 80) {
+      const existing = this.suggestions.find(
+        s => s.type === 'SYMBOLIC_HIGH' && !s.dismissed
+      );
+      if (existing) return;
+
+      const suggestion: PlannerSuggestion = {
+        id: generateId(),
+        type: 'SYMBOLIC_HIGH',
+        priority: 'low',
+        title: '🌟 High Symbolic Density!',
+        description: `Your intention clarity is excellent at ${symbolic}%. Great time for creative work or important decisions.`,
+        action: { type: 'dismiss' },
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60 * 60000).toISOString()
+      };
+
+      this.addSuggestion(suggestion);
+
+      auditLog.addEntry(
+        'AI_SUGGESTION',
+        'success',
+        `High symbolic density: ${symbolic}%`,
+        { metric: 'symbolic', value: symbolic }
+      );
+    }
+  }
+
+  /**
+   * Check resonance coupling and provide connection suggestions
+   */
+  private checkResonanceCoupling(): void {
+    if (!this.currentMetrics) return;
+
+    const resonance = this.currentMetrics.resonance;
+
+    // Low resonance - suggest social/rhythm activities
+    if (resonance < 30) {
+      const existing = this.suggestions.find(
+        s => s.type === 'RESONANCE_LOW' && !s.dismissed
+      );
+      if (existing) return;
+
+      const suggestion: PlannerSuggestion = {
+        id: generateId(),
+        type: 'RESONANCE_LOW',
+        priority: resonance < 20 ? 'high' : 'medium',
+        title: '🔗 Resonance Needs Attention',
+        description: `Your rhythm alignment is at ${resonance}%. Try listening to music, connecting with someone, or syncing your tasks with your natural energy.`,
+        action: {
+          type: 'navigate',
+          payload: {
+            section: 'music',
+            metricContext: { metric: 'resonance', value: resonance },
+            suggestion: 'Play uplifting music to boost resonance'
+          }
+        },
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 2 * 60 * 60000).toISOString()
+      };
+
+      this.addSuggestion(suggestion);
+
+      auditLog.addEntry(
+        'AI_SUGGESTION',
+        'info',
+        `Low resonance coupling detected: ${resonance}%`,
+        { metric: 'resonance', value: resonance }
+      );
+    }
+
+    // High resonance - positive notification
+    if (resonance >= 80) {
+      const existing = this.suggestions.find(
+        s => s.type === 'RESONANCE_HIGH' && !s.dismissed
+      );
+      if (existing) return;
+
+      const suggestion: PlannerSuggestion = {
+        id: generateId(),
+        type: 'RESONANCE_HIGH',
+        priority: 'low',
+        title: '🎵 Excellent Resonance!',
+        description: `Your rhythm alignment is strong at ${resonance}%. You're in sync with your natural flow.`,
+        action: { type: 'dismiss' },
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60 * 60000).toISOString()
+      };
+
+      this.addSuggestion(suggestion);
+
+      auditLog.addEntry(
+        'AI_SUGGESTION',
+        'success',
+        `High resonance coupling: ${resonance}%`,
+        { metric: 'resonance', value: resonance }
+      );
+    }
+  }
+
+  /**
+   * Check harmonic stability and provide grounding suggestions
+   */
+  private checkHarmonicStability(): void {
+    if (!this.currentMetrics) return;
+
+    const stability = this.currentMetrics.stability;
+
+    // Low stability - suggest grounding activities
+    if (stability < 30) {
+      const existing = this.suggestions.find(
+        s => s.type === 'STABILITY_LOW' && !s.dismissed
+      );
+      if (existing) return;
+
+      const suggestion: PlannerSuggestion = {
+        id: generateId(),
+        type: 'STABILITY_LOW',
+        priority: stability < 20 ? 'high' : 'medium',
+        title: '⚖️ Stability Needs Support',
+        description: `Your harmonic stability is at ${stability}%. Try completing an anchor task, following a routine, or practicing meditation for grounding.`,
+        action: {
+          type: 'navigate',
+          payload: {
+            section: 'anchors',
+            metricContext: { metric: 'stability', value: stability },
+            suggestion: 'Complete a daily anchor to stabilize'
+          }
+        },
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 2 * 60 * 60000).toISOString()
+      };
+
+      this.addSuggestion(suggestion);
+
+      auditLog.addEntry(
+        'AI_SUGGESTION',
+        'info',
+        `Low harmonic stability detected: ${stability}%`,
+        { metric: 'stability', value: stability }
+      );
+    }
+
+    // High stability - positive notification
+    if (stability >= 80) {
+      const existing = this.suggestions.find(
+        s => s.type === 'STABILITY_HIGH' && !s.dismissed
+      );
+      if (existing) return;
+
+      const suggestion: PlannerSuggestion = {
+        id: generateId(),
+        type: 'STABILITY_HIGH',
+        priority: 'low',
+        title: '🛡️ Strong Harmonic Stability!',
+        description: `Your stability is excellent at ${stability}%. Your consistent patterns are paying off.`,
+        action: { type: 'dismiss' },
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60 * 60000).toISOString()
+      };
+
+      this.addSuggestion(suggestion);
+
+      auditLog.addEntry(
+        'AI_SUGGESTION',
+        'success',
+        `High harmonic stability: ${stability}%`,
+        { metric: 'stability', value: stability }
+      );
+    }
+  }
+
+  /**
+   * Check for positive states and celebrate achievements
+   */
+  private checkPositiveStates(): void {
+    if (!this.currentMetrics) return;
+
+    const { fieldState, deltaHV, symbolic, resonance, friction, stability } = this.currentMetrics;
+
+    // Coherent state - celebrate!
+    if (fieldState === 'coherent' && deltaHV >= 70) {
+      const existing = this.suggestions.find(
+        s => s.type === 'COHERENT_STATE' && !s.dismissed
+      );
+      if (existing) return;
+
+      const suggestion: PlannerSuggestion = {
+        id: generateId(),
+        type: 'COHERENT_STATE',
+        priority: 'low',
+        title: '🌈 You\'re in a Coherent State!',
+        description: `Your DeltaHV is ${deltaHV}% with all metrics aligned. This is optimal for deep work, creativity, or meaningful conversations.`,
+        action: { type: 'dismiss' },
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 30 * 60000).toISOString()
+      };
+
+      this.addSuggestion(suggestion);
+
+      auditLog.addEntry(
+        'AI_SUGGESTION',
+        'success',
+        `Coherent field state achieved! ΔHV: ${deltaHV}%`,
+        { fieldState, deltaHV, symbolic, resonance, friction, stability }
+      );
+    }
+
+    // Check if multiple metrics are high (positive trend)
+    const highMetrics = [
+      symbolic >= 70,
+      resonance >= 70,
+      friction <= 30,
+      stability >= 70
+    ].filter(Boolean).length;
+
+    if (highMetrics >= 3 && deltaHV >= 60) {
+      const existing = this.suggestions.find(
+        s => s.type === 'POSITIVE_TREND' && !s.dismissed
+      );
+      if (existing) return;
+
+      const suggestion: PlannerSuggestion = {
+        id: generateId(),
+        type: 'POSITIVE_TREND',
+        priority: 'low',
+        title: '📈 Excellent Metric Balance!',
+        description: `${highMetrics}/4 metrics are in optimal range. You're building positive momentum!`,
+        action: { type: 'dismiss' },
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60 * 60000).toISOString()
+      };
+
+      this.addSuggestion(suggestion);
+
+      auditLog.addEntry(
+        'AI_SUGGESTION',
+        'success',
+        `Positive trend: ${highMetrics}/4 metrics optimal`,
+        { highMetrics, deltaHV }
+      );
+    }
   }
 
   /**

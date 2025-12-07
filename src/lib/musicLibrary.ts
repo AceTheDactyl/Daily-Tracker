@@ -110,6 +110,8 @@ class MusicLibraryService {
   private playbackListeners: Set<(state: { isPlaying: boolean; trackId: string | null }) => void> = new Set();
   private currentTrackId: string | null = null;
   private playbackStartTime: number = 0;
+  // Mutex-like flag to prevent race conditions when multiple play requests come in
+  private isPlaybackTransitioning: boolean = false;
 
   /**
    * Initialize IndexedDB
@@ -371,6 +373,7 @@ class MusicLibraryService {
 
   /**
    * Play a track
+   * Uses a mutex to prevent race conditions when multiple components try to play
    */
   async playTrack(
     trackId: string,
@@ -378,61 +381,79 @@ class MusicLibraryService {
     linkedBeatId?: string,
     linkedBeatType?: string
   ): Promise<MusicSession | null> {
-    const track = await this.getTrack(trackId);
-    if (!track) return null;
-
-    const audioUrl = await this.getAudioUrl(trackId);
-    if (!audioUrl) return null;
-
-    // Stop current playback if any - CRITICAL: prevents two songs playing
-    await this.stopPlayback();
-
-    // Create audio element
-    this.currentAudio = new Audio(audioUrl);
-    this.currentTrackId = trackId;
-    this.playbackStartTime = Date.now();
-
-    // Create session
-    const session: MusicSession = {
-      id: `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      trackId,
-      trackName: track.name,
-      categoryId: track.categoryId,
-      startedAt: new Date().toISOString(),
-      duration: 0,
-      desiredEmotion,
-      linkedBeatId,
-      linkedBeatType,
-      completed: false
-    };
-
-    this.currentSession = session;
-
-    // Add event listeners for state synchronization
-    this.currentAudio.addEventListener('ended', () => {
-      this.handlePlaybackEnd(this.playbackStartTime, true);
-      this.notifyPlaybackState(false);
-    });
-
-    this.currentAudio.addEventListener('pause', () => {
-      if (this.currentSession && !this.currentSession.completed) {
-        this.currentSession.duration = (Date.now() - this.playbackStartTime) / 1000;
+    // Prevent race conditions - if already transitioning, wait briefly
+    if (this.isPlaybackTransitioning) {
+      console.log('Playback transition in progress, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 100));
+      if (this.isPlaybackTransitioning) {
+        console.log('Still transitioning, aborting new playback request');
+        return null;
       }
-      this.notifyPlaybackState(false);
-    });
+    }
 
-    this.currentAudio.addEventListener('play', () => {
-      this.notifyPlaybackState(true);
-    });
+    this.isPlaybackTransitioning = true;
 
-    // Handle errors gracefully
-    this.currentAudio.addEventListener('error', (e) => {
-      console.error('Audio playback error:', e);
-      this.notifyPlaybackState(false);
-    });
-
-    // Start playback
     try {
+      const track = await this.getTrack(trackId);
+      if (!track) {
+        this.isPlaybackTransitioning = false;
+        return null;
+      }
+
+      const audioUrl = await this.getAudioUrl(trackId);
+      if (!audioUrl) {
+        this.isPlaybackTransitioning = false;
+        return null;
+      }
+
+      // Stop current playback if any - CRITICAL: prevents two songs playing
+      await this.stopPlayback();
+
+      // Create audio element
+      this.currentAudio = new Audio(audioUrl);
+      this.currentTrackId = trackId;
+      this.playbackStartTime = Date.now();
+
+      // Create session
+      const session: MusicSession = {
+        id: `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        trackId,
+        trackName: track.name,
+        categoryId: track.categoryId,
+        startedAt: new Date().toISOString(),
+        duration: 0,
+        desiredEmotion,
+        linkedBeatId,
+        linkedBeatType,
+        completed: false
+      };
+
+      this.currentSession = session;
+
+      // Add event listeners for state synchronization
+      this.currentAudio.addEventListener('ended', () => {
+        this.handlePlaybackEnd(this.playbackStartTime, true);
+        this.notifyPlaybackState(false);
+      });
+
+      this.currentAudio.addEventListener('pause', () => {
+        if (this.currentSession && !this.currentSession.completed) {
+          this.currentSession.duration = (Date.now() - this.playbackStartTime) / 1000;
+        }
+        this.notifyPlaybackState(false);
+      });
+
+      this.currentAudio.addEventListener('play', () => {
+        this.notifyPlaybackState(true);
+      });
+
+      // Handle errors gracefully
+      this.currentAudio.addEventListener('error', (e) => {
+        console.error('Audio playback error:', e);
+        this.notifyPlaybackState(false);
+      });
+
+      // Start playback
       await this.currentAudio.play();
 
       // Notify that playback started
@@ -458,6 +479,9 @@ class MusicLibraryService {
       this.currentTrackId = null;
       this.notifyPlaybackState(false);
       return null;
+    } finally {
+      // Always release the mutex
+      this.isPlaybackTransitioning = false;
     }
   }
 
