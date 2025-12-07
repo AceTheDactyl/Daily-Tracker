@@ -120,38 +120,38 @@ export default function App() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  
+
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState<Date>(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  
+
   const [setupOpen, setSetupOpen] = useState(false);
   const [waveAnchorsOpen, setWaveAnchorsOpen] = useState(false);
   const [anchorsExpanded, setAnchorsExpanded] = useState(false);
-  
+
   const [miniOpen, setMiniOpen] = useState(false);
   const [miniCategory, setMiniCategory] = useState<string>('Workout');
   const [miniTask, setMiniTask] = useState('');
   const [miniTime, setMiniTime] = useState(toTimeInput(addMinutes(new Date(), 30)));
   const [miniNote, setMiniNote] = useState('');
   const [miniWaveId, setMiniWaveId] = useState<string>('');
-  
+
   const [newJournalOpen, setNewJournalOpen] = useState(false);
   const [newJournalContent, setNewJournalContent] = useState('');
   const [newJournalWave, setNewJournalWave] = useState<string>('');
-  
+
   const [generalNoteOpen, setGeneralNoteOpen] = useState(false);
   const [generalNoteText, setGeneralNoteText] = useState('');
   const [generalNoteTime, setGeneralNoteTime] = useState(toTimeInput(addMinutes(new Date(), 30)));
-  
+
   const [mixerOpen, setMixerOpen] = useState(false);
   const [mixFreqs, setMixFreqs] = useState<number[]>([432, 0, 0]);
   const mixCtx = useRef<AudioContext | null>(null);
   const mixOsc = useRef<(OscillatorNode | null)[]>([null, null, null]);
   const mixGain = useRef<(GainNode | null)[]>([null, null, null]);
   const [mixPlaying, setMixPlaying] = useState(false);
-  
+
   const [glyphCanvasOpen, setGlyphCanvasOpen] = useState(false);
 
   // Google Calendar integration
@@ -166,7 +166,7 @@ export default function App() {
         const checkInsData = await storageGet('pulse-check-ins');
         const journalsData = await storageGet('pulse-journals');
         const profileData = await storageGet('pulse-rhythm-profile');
-        
+
         if (checkInsData) setCheckIns(JSON.parse(checkInsData));
         if (journalsData) setJournals(JSON.parse(journalsData));
         if (profileData) {
@@ -358,7 +358,7 @@ export default function App() {
   };
 
   const removeCheckIn = (id: string) => setCheckIns(prev => prev.filter(c => c.id !== id));
-  
+
   const toggleExpanded = (id: string) => {
     setCheckIns(prev => prev.map(c => c.id === id ? { ...c, expanded: !c.expanded } : c));
   };
@@ -366,7 +366,7 @@ export default function App() {
   const snoozeAnchor = (id: string, minutes: number) => {
     const anchor = checkIns.find(c => c.id === id);
     if (!anchor) return;
-    
+
     const newTime = addMinutes(new Date(anchor.slot), minutes);
     scheduleBeat(anchor.category, anchor.task, newTime, anchor.note, anchor.waveId, anchor.isAnchor);
     removeCheckIn(id);
@@ -431,7 +431,7 @@ export default function App() {
   const downloadAllJournals = () => {
     const dayKey = toDateInput(selectedDate);
     const entries = journals[dayKey] || [];
-    const combined = entries.map(e => 
+    const combined = entries.map(e =>
       `[${new Date(e.timestamp).toLocaleString()}]\n${e.content}\n\n`
     ).join('---\n\n');
     const blob = new Blob([combined], { type: 'text/plain;charset=utf-8' });
@@ -498,7 +498,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-blue-950 text-gray-100 p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
-        
+
         {/* Header */}
         <div className="text-center space-y-3">
           <div className="flex items-start justify-between">
@@ -527,7 +527,7 @@ export default function App() {
 
             <div className="w-12"></div>
           </div>
-          
+
           <div className="flex items-center justify-center gap-4 flex-wrap">
             <button onClick={() => setDatePickerOpen(!datePickerOpen)} className="px-4 py-2 rounded-lg bg-gray-900/70 border border-gray-800 hover:bg-gray-800 flex items-center gap-2">
               <Calendar className="w-4 h-4" />
@@ -613,7 +613,7 @@ export default function App() {
           <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-2xl p-6 animate-in fade-in slide-in-from-top duration-300">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-light flex items-center gap-3">
-                <Zap className="w-6 h-6 text-amber-400" /> 
+                <Zap className="w-6 h-6 text-amber-400" />
                 Daily Anchors
               </h2>
               <div className="flex gap-2">
@@ -708,7 +708,7 @@ export default function App() {
         {/* Upcoming Beats */}
         <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-2xl p-6">
           <h2 className="text-xl font-light mb-4 flex items-center gap-3">
-            <Clock className="w-6 h-6 text-cyan-400" /> 
+            <Clock className="w-6 h-6 text-cyan-400" />
             Upcoming Beats - {selectedDate.toDateString()}
           </h2>
           {upcoming.length === 0 ? (
@@ -784,7 +784,7 @@ export default function App() {
               </button>
             </div>
           </div>
-          
+
           {dayJournals.length === 0 ? (
             <p className="text-gray-500 italic text-sm">No journal entries for this day</p>
           ) : (
@@ -868,7 +868,7 @@ export default function App() {
           <WaveSetupWizard
             profile={rhythmProfile}
             onClose={() => setSetupOpen(false)}
-            onSave={(profile) => {
+            onSave={(profile: RhythmProfile) => {
               setRhythmProfile(profile);
               setSetupOpen(false);
             }}
@@ -881,7 +881,7 @@ export default function App() {
             selectedDate={selectedDate}
             checkIns={checkIns}
             onClose={() => setWaveAnchorsOpen(false)}
-            onSetAnchor={(waveId, task, note) => {
+            onSetAnchor={(waveId: string, task: string, note: string) => {
               const when = new Date(selectedDate);
               const wave = rhythmProfile.waves.find(w => w.id === waveId);
               if (wave) {
@@ -902,16 +902,16 @@ export default function App() {
             note={miniNote}
             waveId={miniWaveId}
             waves={rhythmProfile.waves}
-            onChange={(p) => { 
-              if (p.time !== undefined) setMiniTime(p.time); 
-              if (p.task !== undefined) setMiniTask(p.task); 
+            onChange={(p: any) => {
+              if (p.time !== undefined) setMiniTime(p.time);
+              if (p.task !== undefined) setMiniTask(p.task);
               if (p.note !== undefined) setMiniNote(p.note);
               if (p.waveId !== undefined) setMiniWaveId(p.waveId);
             }}
             onClose={() => setMiniOpen(false)}
             onSubmit={() => {
               const [hh, mm] = miniTime.split(':').map(n => parseInt(n));
-              const when = new Date(selectedDate); 
+              const when = new Date(selectedDate);
               when.setHours(hh || 0, mm || 0, 0, 0);
               const task = miniTask || `${miniCategory} Beat`;
               scheduleBeat(miniCategory, task, when, miniNote, miniWaveId);
@@ -936,8 +936,8 @@ export default function App() {
         {datePickerOpen && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setDatePickerOpen(false)}>
             <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5" onClick={(e) => e.stopPropagation()}>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={toDateInput(selectedDate)}
                 onChange={(e) => {
                   setSelectedDate(new Date(e.target.value + 'T12:00:00'));
@@ -971,7 +971,7 @@ export default function App() {
           <ToneMixer
             freqs={mixFreqs}
             playing={mixPlaying}
-            onChangeFreq={(i, v) => {
+            onChangeFreq={(i: number, v: number) => {
               const next = [...mixFreqs];
               next[i] = v;
               setMixFreqs(next);
@@ -1064,7 +1064,7 @@ function CalendarMonth({ month, selectedDate, deviationDay, onPrev, onNext, onSe
 }) {
   const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
   const endOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth()+1, 0);
-  
+
   const first = startOfMonth(month);
   const last = endOfMonth(month);
   const startWeekday = first.getDay();
@@ -1105,7 +1105,7 @@ function CalendarMonth({ month, selectedDate, deviationDay, onPrev, onNext, onSe
   );
 }
 
-function WaveSetupWizard({ profile, onClose, onSave }: { profile: RhythmProfile; onClose: () => void; onSave: (profile: RhythmProfile) => void }) {
+function WaveSetupWizard({ profile, onClose, onSave }: any) {
   const [step, setStep] = useState(0);
   const [waves, setWaves] = useState(profile.waves);
   const [deviationDay, setDeviationDay] = useState(profile.deviationDay ?? 6);
@@ -1117,7 +1117,7 @@ function WaveSetupWizard({ profile, onClose, onSave }: { profile: RhythmProfile;
         <h2 className="text-2xl font-light text-purple-400 flex items-center gap-3">
           <Waves className="w-8 h-8" /> Wave Setup Wizard
         </h2>
-        
+
         {step === 0 && (
           <div className="space-y-4">
             <p className="text-gray-300">Your brain flows through three biological waves each day. Let's map YOUR personal rhythm.</p>
@@ -1279,7 +1279,7 @@ function WaveSetupWizard({ profile, onClose, onSave }: { profile: RhythmProfile;
   );
 }
 
-function WaveAnchorsModal({ waves, selectedDate, checkIns, onClose, onSetAnchor }: { waves: Wave[]; selectedDate: Date; checkIns: CheckIn[]; onClose: () => void; onSetAnchor: (waveId: string, task: string, note: string) => void }) {
+function WaveAnchorsModal({ waves, selectedDate, checkIns, onClose, onSetAnchor }: any) {
   const [anchors, setAnchors] = useState<Record<string, {task: string; note: string}>>({});
 
   useEffect(() => {
@@ -1348,7 +1348,7 @@ function WaveAnchorsModal({ waves, selectedDate, checkIns, onClose, onSetAnchor 
   );
 }
 
-function MiniScheduler({ date, category, presetTasks, time, note, waveId, waves, onChange, onClose, onSubmit }: { date: Date; category: string; presetTasks: string[]; time: string; note: string; waveId: string; waves: Wave[]; onChange: (params: { time?: string; task?: string; note?: string; waveId?: string }) => void; onClose: () => void; onSubmit: () => void }) {
+function MiniScheduler({ date, category, presetTasks, time, note, waveId, waves, onChange, onClose, onSubmit }: any) {
   const [selectedTask, setSelectedTask] = useState<string>('');
 
   return (
@@ -1358,9 +1358,9 @@ function MiniScheduler({ date, category, presetTasks, time, note, waveId, waves,
           <div className="text-sm text-gray-400">{date.toDateString()}</div>
           <button onClick={onClose} className="px-2 py-1 rounded-lg bg-gray-900/70 border border-gray-800 hover:bg-gray-800">Close</button>
         </div>
-        
+
         <div className="text-lg font-medium">{category}</div>
-        
+
         <div>
           <label className="text-xs text-gray-400 mb-1 block">Assign to Wave</label>
           <select
@@ -1374,19 +1374,19 @@ function MiniScheduler({ date, category, presetTasks, time, note, waveId, waves,
             ))}
           </select>
         </div>
-        
+
         <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
           {presetTasks.map((t: string) => (
-            <button key={t} onClick={() => { setSelectedTask(t); onChange({ task: t }); }} 
+            <button key={t} onClick={() => { setSelectedTask(t); onChange({ task: t }); }}
               className={`px-3 py-2 rounded-xl border text-left text-sm ${selectedTask === t ? 'bg-cyan-900/50 border-cyan-500' : 'bg-gray-900/60 border-gray-800 hover:bg-gray-800'}`}
             >{t}</button>
           ))}
         </div>
-        
+
         <input value={time} onChange={(e) => onChange({ time: e.target.value })} type="time" className="w-full px-3 py-2 rounded-xl bg-gray-900/70 border border-gray-800 outline-none focus:border-cyan-500" />
         <input onChange={(e) => onChange({ task: e.target.value })} placeholder="or type custom task..." className="w-full px-3 py-2 rounded-xl bg-gray-900/70 border border-gray-800 outline-none focus:border-cyan-500" />
         <textarea value={note} onChange={(e) => onChange({ note: e.target.value })} placeholder="note (optional)" className="w-full min-h-[64px] px-3 py-2 rounded-xl bg-gray-900/70 border border-gray-800 outline-none focus:border-cyan-500" />
-        
+
         <div className="flex justify-end">
           <button onClick={onSubmit} className="px-4 py-2 rounded-xl bg-amber-500 text-black hover:bg-amber-400">Schedule</button>
         </div>
@@ -1395,7 +1395,7 @@ function MiniScheduler({ date, category, presetTasks, time, note, waveId, waves,
   );
 }
 
-function JournalModal({ date, value, waveId, waves, onChange, onWaveChange, onClose, onSave }: { date: Date; value: string; waveId: string; waves: Wave[]; onChange: (value: string) => void; onWaveChange: (waveId: string) => void; onClose: () => void; onSave: () => void }) {
+function JournalModal({ date, value, waveId, waves, onChange, onWaveChange, onClose, onSave }: any) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-4">
       <div className="w-full max-w-xl bg-gray-950 border border-gray-800 rounded-2xl p-5 space-y-3">
@@ -1420,9 +1420,9 @@ function JournalModal({ date, value, waveId, waves, onChange, onWaveChange, onCl
             ))}
           </select>
         </div>
-        
+
         <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder="Write your entry..." className="w-full min-h-[220px] px-3 py-2 rounded-xl bg-gray-900/70 border border-gray-800 outline-none focus:border-cyan-500" />
-        
+
         <div className="flex justify-end">
           <button onClick={onSave} className="px-4 py-2 rounded-xl bg-emerald-500 text-black hover:bg-emerald-400">Save Entry</button>
         </div>
@@ -1431,7 +1431,7 @@ function JournalModal({ date, value, waveId, waves, onChange, onWaveChange, onCl
   );
 }
 
-function GeneralNoteModal({ date, text, time, onChangeText, onChangeTime, onClose, onSave }: { date: Date; text: string; time: string; onChangeText: (text: string) => void; onChangeTime: (time: string) => void; onClose: () => void; onSave: () => void }) {
+function GeneralNoteModal({ date, text, time, onChangeText, onChangeTime, onClose, onSave }: any) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-4">
       <div className="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl p-5 space-y-3">
@@ -1442,10 +1442,10 @@ function GeneralNoteModal({ date, text, time, onChangeText, onChangeTime, onClos
           </div>
           <button onClick={onClose} className="px-2 py-1 rounded-lg bg-gray-900/70 border border-gray-800 hover:bg-gray-800">Close</button>
         </div>
-        
+
         <input type="text" value={text} onChange={(e) => onChangeText(e.target.value)} placeholder="e.g., Dinner at 7pm, Call dentist, etc." className="w-full px-3 py-2 rounded-xl bg-gray-900/70 border border-gray-800 outline-none focus:border-cyan-500" />
         <input type="time" value={time} onChange={(e) => onChangeTime(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-900/70 border border-gray-800 outline-none focus:border-cyan-500" />
-        
+
         <div className="flex justify-end">
           <button onClick={onSave} className="px-4 py-2 rounded-xl bg-amber-500 text-black hover:bg-amber-400">Schedule</button>
         </div>
@@ -1454,7 +1454,7 @@ function GeneralNoteModal({ date, text, time, onChangeText, onChangeTime, onClos
   );
 }
 
-function ToneMixer({ freqs, playing, onChangeFreq, onToggle, onClose }: { freqs: number[]; playing: boolean; onChangeFreq: (i: number, v: number) => void; onToggle: () => void; onClose: () => void }) {
+function ToneMixer({ freqs, playing, onChangeFreq, onToggle, onClose }: any) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-4">
       <div className="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl p-5 space-y-4">
