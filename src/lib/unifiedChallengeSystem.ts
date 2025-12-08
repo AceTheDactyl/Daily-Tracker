@@ -885,6 +885,8 @@ export const MINI_GAME_COSMETICS = [
 
 const UNIFIED_STORAGE_KEY = 'pulse-unified-challenges';
 const ACTIVE_CHALLENGES_KEY = 'pulse-active-challenges';
+// Version number - increment when challenge pool changes to force regeneration
+const CHALLENGE_POOL_VERSION = 2;
 
 // ============================================================================
 // UNIFIED CHALLENGE SERVICE
@@ -1031,8 +1033,13 @@ class UnifiedChallengeService {
 
   private checkAndRefreshDaily(): void {
     const today = this.getTodayKey();
-    if (this.activeChallenges.length === 0 || this.activeChallenges[0]?.date !== today) {
+    // Check stored version to force regeneration when pool changes
+    const storedVersion = localStorage.getItem('pulse-challenges-version');
+    const needsVersionUpdate = storedVersion !== String(CHALLENGE_POOL_VERSION);
+
+    if (this.activeChallenges.length === 0 || this.activeChallenges[0]?.date !== today || needsVersionUpdate) {
       this.generateDailyChallenges();
+      localStorage.setItem('pulse-challenges-version', String(CHALLENGE_POOL_VERSION));
     }
   }
 
