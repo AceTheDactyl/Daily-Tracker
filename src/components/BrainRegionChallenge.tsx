@@ -169,7 +169,8 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
   // Filter challenges by type
   const challengesByType = useMemo(() => {
     const daily = activeChallenges.filter(c => c.type === 'site_activity' || c.type === 'metric_goal' || c.type === 'brain_task');
-    const miniGames = activeChallenges.filter(c => c.type === 'mini_game' && !c.completed);
+    // Show ALL mini-games (they're always playable, just limited XP rewards)
+    const miniGames = activeChallenges.filter(c => c.type === 'mini_game');
     const secrets = activeChallenges.filter(c => c.type === 'secret');
 
     return { daily, miniGames, secrets };
@@ -208,15 +209,25 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
     }
   }, [onCompleteChallenge]);
 
-  // Complete mini-game
+  // Complete mini-game (always playable, XP limited to 3/day)
   const handleMiniGameComplete = useCallback((score: number) => {
     if (!activeMiniGame) return;
 
     const result = unifiedChallengeService.completeMiniGame(activeMiniGame.id, score);
     if (result) {
-      setShowRewardAnimation({ xp: result.xpEarned, cosmetic: result.cosmeticUnlocked || undefined });
-      setTimeout(() => setShowRewardAnimation(null), 3000);
-      onCompleteChallenge?.(activeMiniGame.id, result.xpEarned);
+      // Show appropriate feedback based on whether XP was earned
+      if (result.xpEarned > 0) {
+        setShowRewardAnimation({ xp: result.xpEarned, cosmetic: result.cosmeticUnlocked || undefined });
+        onCompleteChallenge?.(activeMiniGame.id, result.xpEarned);
+      } else if (result.highScore) {
+        // No XP but got a high score
+        setShowRewardAnimation({ xp: 0, cosmetic: '🏆 New High Score!' });
+      }
+      // Always refresh stats to update XP claims remaining
+      setStats(unifiedChallengeService.getStats());
+      if (result.xpEarned > 0 || result.highScore) {
+        setTimeout(() => setShowRewardAnimation(null), 3000);
+      }
     }
     setActiveMiniGame(null);
   }, [activeMiniGame, onCompleteChallenge]);
@@ -316,10 +327,10 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
     { id: 'integration', label: 'Integrate', icon: <Layers className="w-4 h-4" />, color: 'indigo' },
   ];
 
-  const tabs: Array<{ id: ViewTab; label: string; icon: React.ReactNode; count?: number }> = [
+  const tabs: Array<{ id: ViewTab; label: string; icon: React.ReactNode; count?: number; badge?: string }> = [
     { id: 'challenges', label: 'Daily', icon: <ListChecks className="w-4 h-4" />, count: challengesByType.daily.filter(c => !c.completed).length },
     { id: 'brain', label: 'Brain Tasks', icon: <Brain className="w-4 h-4" /> },
-    { id: 'mini_games', label: 'Mini Games', icon: <Gamepad2 className="w-4 h-4" />, count: challengesByType.miniGames.length },
+    { id: 'mini_games', label: 'Mini Games', icon: <Gamepad2 className="w-4 h-4" />, count: challengesByType.miniGames.length, badge: stats.miniGameXPClaimsRemaining > 0 ? `${stats.miniGameXPClaimsRemaining} XP` : undefined },
     { id: 'secrets', label: 'Secrets', icon: <HelpCircle className="w-4 h-4" />, count: stats.secretsFound },
   ];
 
@@ -382,6 +393,11 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
                 activeTab === tab.id ? 'bg-purple-500/50' : 'bg-gray-700'
               }`}>
                 {tab.count}
+              </span>
+            )}
+            {tab.badge && (
+              <span className="px-1.5 py-0.5 rounded text-xs bg-emerald-500/30 text-emerald-300 border border-emerald-500/40">
+                {tab.badge}
               </span>
             )}
           </button>
@@ -542,8 +558,20 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
                 Mini Games
               </h2>
               <p className="text-sm text-gray-400 mt-1">
-                Quick brain teasers for bonus XP
+                Always playable • XP rewards {stats.miniGameXPClaimsRemaining}/3 remaining today
               </p>
+              {stats.miniGameXPClaimsRemaining > 0 && (
+                <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30">
+                  <Sparkles className="w-3 h-3 text-emerald-400" />
+                  <span className="text-xs text-emerald-300">{stats.miniGameXPClaimsRemaining} XP bonuses available!</span>
+                </div>
+              )}
+              {stats.miniGameXPClaimsRemaining === 0 && (
+                <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-500/20 border border-gray-500/30">
+                  <Clock className="w-3 h-3 text-gray-400" />
+                  <span className="text-xs text-gray-400">Play for fun! XP resets at midnight</span>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
