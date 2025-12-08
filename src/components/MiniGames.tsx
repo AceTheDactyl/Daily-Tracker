@@ -13,6 +13,8 @@ import {
   Play,
   Eye,
   EyeOff,
+  Clock,
+  Lightbulb,
 } from 'lucide-react';
 import type { MiniGameData, ActiveChallenge } from '../lib/unifiedChallengeSystem';
 
@@ -60,6 +62,10 @@ export const MiniGames: React.FC<MiniGamesProps> = ({ challenge, onComplete, onC
           {gameType === 'math_series' && <MathSeriesGame data={gameData} onComplete={onComplete} />}
           {gameType === 'color_sequence' && <ColorSequenceGame data={gameData} onComplete={onComplete} />}
           {gameType === 'card_memory' && <CardMemoryGame data={gameData} onComplete={onComplete} />}
+          {gameType === 'word_scramble' && <WordScrambleGame data={gameData} onComplete={onComplete} />}
+          {gameType === 'reaction_time' && <ReactionTimeGame data={gameData} onComplete={onComplete} />}
+          {gameType === 'pattern_match' && <PatternMatchGame data={gameData} onComplete={onComplete} />}
+          {gameType === 'speed_math' && <SpeedMathGame data={gameData} onComplete={onComplete} />}
         </div>
 
         {/* XP Reward */}
@@ -97,7 +103,7 @@ const RiddleGame: React.FC<RiddleGameProps> = ({ data, onComplete }) => {
     const isCorrect = index === data.correctAnswer;
     setTimeout(() => {
       if (isCorrect) {
-        const score = Math.max(100 - (attempts * 20), 40); // Score decreases with attempts
+        const score = Math.max(100 - (attempts * 20), 40);
         onComplete(score);
       }
     }, 1500);
@@ -303,7 +309,6 @@ const ColorSequenceGame: React.FC<ColorSequenceGameProps> = ({ data, onComplete 
     const newSequence = [...userSequence, color];
     setUserSequence(newSequence);
 
-    // Check if sequence is complete
     if (newSequence.length === sequence.length) {
       const correct = newSequence.every((c, i) => c === sequence[i]);
       setIsCorrect(correct);
@@ -452,7 +457,6 @@ const CardMemoryGame: React.FC<CardMemoryGameProps> = ({ data, onComplete }) => 
   const [showPreview, setShowPreview] = useState(true);
   const lockRef = useRef(false);
 
-  // Initialize cards
   useEffect(() => {
     const cardSymbols = symbols.slice(0, pairs);
     const cardPairs = [...cardSymbols, ...cardSymbols]
@@ -460,13 +464,12 @@ const CardMemoryGame: React.FC<CardMemoryGameProps> = ({ data, onComplete }) => 
       .map((symbol, index) => ({
         id: index,
         symbol,
-        isFlipped: true, // Show all cards initially
+        isFlipped: true,
         isMatched: false,
       }));
 
     setCards(cardPairs);
 
-    // Hide cards after preview
     const timer = setTimeout(() => {
       setCards(prev => prev.map(card => ({ ...card, isFlipped: false })));
       setShowPreview(false);
@@ -495,7 +498,6 @@ const CardMemoryGame: React.FC<CardMemoryGameProps> = ({ data, onComplete }) => 
       const secondCard = cards.find(c => c.id === second);
 
       if (firstCard?.symbol === secondCard?.symbol) {
-        // Match found
         setTimeout(() => {
           setCards(prev => prev.map(c =>
             c.id === first || c.id === second ? { ...c, isMatched: true } : c
@@ -503,7 +505,6 @@ const CardMemoryGame: React.FC<CardMemoryGameProps> = ({ data, onComplete }) => 
           setMatches(prev => {
             const newMatches = prev + 1;
             if (newMatches === pairs) {
-              // Game complete
               const baseScore = 100;
               const movePenalty = Math.max(0, (moves - pairs) * 5);
               const score = Math.max(baseScore - movePenalty, 50);
@@ -515,7 +516,6 @@ const CardMemoryGame: React.FC<CardMemoryGameProps> = ({ data, onComplete }) => 
           lockRef.current = false;
         }, 500);
       } else {
-        // No match
         setTimeout(() => {
           setCards(prev => prev.map(c =>
             c.id === first || c.id === second ? { ...c, isFlipped: false } : c
@@ -556,7 +556,6 @@ const CardMemoryGame: React.FC<CardMemoryGameProps> = ({ data, onComplete }) => 
 
   return (
     <div className="space-y-4">
-      {/* Stats */}
       <div className="flex justify-between items-center px-2">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-sm text-gray-400">
@@ -577,7 +576,6 @@ const CardMemoryGame: React.FC<CardMemoryGameProps> = ({ data, onComplete }) => 
         </button>
       </div>
 
-      {/* Preview Message */}
       {showPreview && (
         <div className="text-center p-3 bg-cyan-900/20 rounded-xl border border-cyan-500/30">
           <div className="flex items-center justify-center gap-2 text-cyan-300">
@@ -587,7 +585,6 @@ const CardMemoryGame: React.FC<CardMemoryGameProps> = ({ data, onComplete }) => 
         </div>
       )}
 
-      {/* Card Grid */}
       <div className="grid grid-cols-4 gap-2">
         {cards.map(card => (
           <button
@@ -612,12 +609,500 @@ const CardMemoryGame: React.FC<CardMemoryGameProps> = ({ data, onComplete }) => 
         ))}
       </div>
 
-      {/* Completion */}
       {matches === pairs && (
         <div className="text-center p-4 bg-emerald-900/20 rounded-xl border border-emerald-500/30">
           <Trophy className="w-8 h-8 text-amber-400 mx-auto mb-2" />
           <p className="text-emerald-300 font-medium">All pairs found!</p>
           <p className="text-sm text-gray-400 mt-1">Completed in {moves} moves</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// WORD SCRAMBLE GAME
+// ============================================================================
+
+interface WordScrambleGameProps {
+  data: MiniGameData;
+  onComplete: (score: number) => void;
+}
+
+const WordScrambleGame: React.FC<WordScrambleGameProps> = ({ data, onComplete }) => {
+  const word = data.word || 'MINDFUL';
+  const hint = data.hint || 'Being present in the moment';
+
+  const [scrambled] = useState(() => {
+    const chars = word.split('');
+    for (let i = chars.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [chars[i], chars[j]] = [chars[j], chars[i]];
+    }
+    return chars.join('');
+  });
+
+  const [guess, setGuess] = useState('');
+  const [attempts, setAttempts] = useState(0);
+  const [showHint, setShowHint] = useState(false);
+  const [completed, setCompleted] = useState(false);
+
+  const handleSubmit = () => {
+    setAttempts(prev => prev + 1);
+    if (guess.toUpperCase() === word.toUpperCase()) {
+      setCompleted(true);
+      const score = Math.max(100 - (attempts * 10) - (showHint ? 20 : 0), 40);
+      setTimeout(() => onComplete(score), 1500);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <p className="text-sm text-gray-400 mb-3">Unscramble the word:</p>
+        <div className="flex justify-center gap-2">
+          {scrambled.split('').map((letter, i) => (
+            <div
+              key={i}
+              className="w-12 h-12 bg-purple-900/30 border border-purple-500/50 rounded-lg flex items-center justify-center text-2xl font-bold text-purple-300"
+            >
+              {letter}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {!showHint && !completed && (
+        <button
+          onClick={() => setShowHint(true)}
+          className="w-full py-2 rounded-lg bg-amber-900/20 border border-amber-500/30 text-amber-300 flex items-center justify-center gap-2"
+        >
+          <Lightbulb className="w-4 h-4" />
+          Show Hint (-20 points)
+        </button>
+      )}
+
+      {showHint && (
+        <div className="p-3 bg-amber-900/20 rounded-lg border border-amber-500/30">
+          <p className="text-sm text-amber-300">💡 Hint: {hint}</p>
+        </div>
+      )}
+
+      {!completed ? (
+        <div className="space-y-3">
+          <input
+            type="text"
+            value={guess}
+            onChange={(e) => setGuess(e.target.value.toUpperCase())}
+            placeholder="Your answer..."
+            maxLength={word.length}
+            className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl text-white text-center text-xl font-mono uppercase focus:border-purple-500 focus:outline-none"
+            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={guess.length !== word.length}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-medium disabled:opacity-50"
+          >
+            Check Answer
+          </button>
+          {attempts > 0 && !completed && (
+            <p className="text-center text-sm text-red-400">Not correct, try again!</p>
+          )}
+        </div>
+      ) : (
+        <div className="text-center p-4 bg-emerald-900/20 rounded-xl border border-emerald-500/30">
+          <Trophy className="w-8 h-8 text-amber-400 mx-auto mb-2" />
+          <p className="text-emerald-300 font-medium">Correct! The word was {word}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// REACTION TIME GAME
+// ============================================================================
+
+interface ReactionTimeGameProps {
+  data: MiniGameData;
+  onComplete: (score: number) => void;
+}
+
+const ReactionTimeGame: React.FC<ReactionTimeGameProps> = ({ data, onComplete }) => {
+  const targetTime = data.targetTime || 3;
+  const [phase, setPhase] = useState<'waiting' | 'ready' | 'click' | 'result'>('waiting');
+  const [reactionTime, setReactionTime] = useState<number | null>(null);
+  const [attempts, setAttempts] = useState(0);
+  const startTimeRef = useRef<number>(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startGame = () => {
+    setPhase('ready');
+    setReactionTime(null);
+    setAttempts(prev => prev + 1);
+
+    const delay = Math.random() * 3000 + 2000; // 2-5 seconds
+    timerRef.current = setTimeout(() => {
+      setPhase('click');
+      startTimeRef.current = Date.now();
+    }, delay);
+  };
+
+  const handleClick = () => {
+    if (phase === 'ready') {
+      // Clicked too early
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setReactionTime(-1);
+      setPhase('result');
+    } else if (phase === 'click') {
+      const time = Date.now() - startTimeRef.current;
+      setReactionTime(time);
+      setPhase('result');
+
+      if (time < targetTime * 1000) {
+        const score = Math.max(100 - Math.floor(time / 10), 50);
+        setTimeout(() => onComplete(score), 1500);
+      }
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <p className="text-sm text-gray-400 mb-2">Click as fast as you can when the screen turns green!</p>
+        <p className="text-xs text-purple-300">Target: under {targetTime * 1000}ms</p>
+      </div>
+
+      <button
+        onClick={phase === 'waiting' || phase === 'result' ? startGame : handleClick}
+        className={`w-full h-40 rounded-2xl text-xl font-medium transition-all ${
+          phase === 'waiting' ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' :
+          phase === 'ready' ? 'bg-red-600 text-white' :
+          phase === 'click' ? 'bg-emerald-500 text-white animate-pulse' :
+          'bg-gray-800 text-gray-400'
+        }`}
+      >
+        {phase === 'waiting' && 'Click to Start'}
+        {phase === 'ready' && 'Wait for green...'}
+        {phase === 'click' && 'CLICK NOW!'}
+        {phase === 'result' && (
+          reactionTime === -1 ? 'Too early! Click to retry' :
+          reactionTime && reactionTime < targetTime * 1000 ? `${reactionTime}ms - Great!` :
+          `${reactionTime}ms - Try again`
+        )}
+      </button>
+
+      {phase === 'result' && reactionTime && reactionTime > 0 && reactionTime < targetTime * 1000 && (
+        <div className="text-center p-4 bg-emerald-900/20 rounded-xl border border-emerald-500/30">
+          <Trophy className="w-8 h-8 text-amber-400 mx-auto mb-2" />
+          <p className="text-emerald-300 font-medium">Fast reflexes!</p>
+        </div>
+      )}
+
+      <div className="flex justify-center gap-4 text-sm text-gray-500">
+        <span>Attempts: {attempts}</span>
+        {reactionTime && reactionTime > 0 && <span>Last: {reactionTime}ms</span>}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// PATTERN MATCH GAME
+// ============================================================================
+
+interface PatternMatchGameProps {
+  data: MiniGameData;
+  onComplete: (score: number) => void;
+}
+
+const PatternMatchGame: React.FC<PatternMatchGameProps> = ({ data, onComplete }) => {
+  const gridSize = data.gridSize || 3;
+  const [pattern, setPattern] = useState<boolean[]>([]);
+  const [userPattern, setUserPattern] = useState<boolean[]>([]);
+  const [phase, setPhase] = useState<'show' | 'input' | 'result'>('show');
+  const [score, setScore] = useState(0);
+  const [round, setRound] = useState(1);
+
+  useEffect(() => {
+    generatePattern();
+  }, []);
+
+  const generatePattern = () => {
+    const newPattern = Array(gridSize * gridSize).fill(false);
+    const activeCount = Math.min(round + 2, gridSize * gridSize - 1);
+    const indices = [...Array(gridSize * gridSize).keys()];
+
+    for (let i = 0; i < activeCount; i++) {
+      const randomIndex = Math.floor(Math.random() * indices.length);
+      newPattern[indices[randomIndex]] = true;
+      indices.splice(randomIndex, 1);
+    }
+
+    setPattern(newPattern);
+    setUserPattern(Array(gridSize * gridSize).fill(false));
+    setPhase('show');
+
+    setTimeout(() => setPhase('input'), 2000);
+  };
+
+  const handleCellClick = (index: number) => {
+    if (phase !== 'input') return;
+
+    const newUserPattern = [...userPattern];
+    newUserPattern[index] = !newUserPattern[index];
+    setUserPattern(newUserPattern);
+  };
+
+  const checkPattern = () => {
+    const correct = pattern.every((val, i) => val === userPattern[i]);
+    setPhase('result');
+
+    if (correct) {
+      const newScore = score + round * 10;
+      setScore(newScore);
+
+      if (round >= 5) {
+        setTimeout(() => onComplete(Math.min(100, newScore)), 1500);
+      } else {
+        setTimeout(() => {
+          setRound(prev => prev + 1);
+          generatePattern();
+        }, 1500);
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <span className="text-sm text-gray-400">Round {round}/5</span>
+        <span className="text-sm text-purple-300">Score: {score}</span>
+      </div>
+
+      <div className="text-center">
+        {phase === 'show' && <p className="text-cyan-300">Memorize the pattern...</p>}
+        {phase === 'input' && <p className="text-purple-300">Recreate the pattern!</p>}
+      </div>
+
+      <div
+        className="grid gap-2 mx-auto"
+        style={{
+          gridTemplateColumns: `repeat(${gridSize}, 1fr)`,
+          maxWidth: `${gridSize * 60}px`
+        }}
+      >
+        {(phase === 'show' ? pattern : userPattern).map((active, index) => (
+          <button
+            key={index}
+            onClick={() => handleCellClick(index)}
+            disabled={phase !== 'input'}
+            className={`aspect-square rounded-lg transition-all ${
+              active
+                ? 'bg-purple-500 border-purple-400'
+                : 'bg-gray-800 border-gray-700'
+            } border-2 ${phase === 'input' ? 'hover:border-purple-400' : ''}`}
+          />
+        ))}
+      </div>
+
+      {phase === 'input' && (
+        <button
+          onClick={checkPattern}
+          className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-medium"
+        >
+          Check Pattern
+        </button>
+      )}
+
+      {phase === 'result' && (
+        <div className={`text-center p-4 rounded-xl border ${
+          pattern.every((val, i) => val === userPattern[i])
+            ? 'bg-emerald-900/20 border-emerald-500/30'
+            : 'bg-red-900/20 border-red-500/30'
+        }`}>
+          {pattern.every((val, i) => val === userPattern[i]) ? (
+            <>
+              <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+              <p className="text-emerald-300 font-medium">
+                {round >= 5 ? 'All rounds complete!' : 'Correct! Next round...'}
+              </p>
+            </>
+          ) : (
+            <>
+              <XCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
+              <p className="text-red-300 font-medium">Wrong pattern</p>
+              <button
+                onClick={() => {
+                  setScore(0);
+                  setRound(1);
+                  generatePattern();
+                }}
+                className="mt-3 px-4 py-2 rounded-lg bg-purple-600/20 border border-purple-500/50 text-purple-300"
+              >
+                Try Again
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// SPEED MATH GAME
+// ============================================================================
+
+interface SpeedMathGameProps {
+  data: MiniGameData;
+  onComplete: (score: number) => void;
+}
+
+const SpeedMathGame: React.FC<SpeedMathGameProps> = ({ data, onComplete }) => {
+  const totalProblems = data.problemCount || 5;
+  const timeLimit = data.timeLimit || 30;
+
+  const [currentProblem, setCurrentProblem] = useState({ a: 0, b: 0, op: '+', answer: 0 });
+  const [userAnswer, setUserAnswer] = useState('');
+  const [problemIndex, setProblemIndex] = useState(0);
+  const [score, setScore] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(timeLimit);
+  const [gameOver, setGameOver] = useState(false);
+
+  const generateProblem = useCallback(() => {
+    const operations = ['+', '-', '×'];
+    const op = operations[Math.floor(Math.random() * operations.length)];
+    let a: number, b: number, answer: number;
+
+    switch (op) {
+      case '+':
+        a = Math.floor(Math.random() * 50) + 1;
+        b = Math.floor(Math.random() * 50) + 1;
+        answer = a + b;
+        break;
+      case '-':
+        a = Math.floor(Math.random() * 50) + 20;
+        b = Math.floor(Math.random() * (a - 1)) + 1;
+        answer = a - b;
+        break;
+      case '×':
+        a = Math.floor(Math.random() * 12) + 1;
+        b = Math.floor(Math.random() * 12) + 1;
+        answer = a * b;
+        break;
+      default:
+        a = 1; b = 1; answer = 2;
+    }
+
+    return { a, b, op, answer };
+  }, []);
+
+  useEffect(() => {
+    setCurrentProblem(generateProblem());
+  }, [generateProblem]);
+
+  useEffect(() => {
+    if (gameOver || timeLeft <= 0) return;
+
+    const timer = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          setGameOver(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [gameOver]);
+
+  useEffect(() => {
+    if (gameOver && score > 0) {
+      const finalScore = Math.min(100, Math.floor((score / totalProblems) * 100));
+      setTimeout(() => onComplete(finalScore), 1500);
+    }
+  }, [gameOver, score, totalProblems, onComplete]);
+
+  const handleSubmit = () => {
+    const isCorrect = parseInt(userAnswer) === currentProblem.answer;
+
+    if (isCorrect) {
+      setScore(prev => prev + 1);
+    }
+
+    if (problemIndex + 1 >= totalProblems) {
+      setGameOver(true);
+    } else {
+      setProblemIndex(prev => prev + 1);
+      setCurrentProblem(generateProblem());
+      setUserAnswer('');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-amber-400" />
+          <span className={`text-lg font-mono ${timeLeft <= 10 ? 'text-red-400' : 'text-gray-300'}`}>
+            {timeLeft}s
+          </span>
+        </div>
+        <span className="text-sm text-gray-400">
+          Problem {problemIndex + 1}/{totalProblems}
+        </span>
+        <span className="text-sm text-emerald-400">
+          Score: {score}
+        </span>
+      </div>
+
+      {!gameOver ? (
+        <>
+          <div className="text-center p-6 bg-gray-900/50 rounded-xl">
+            <p className="text-4xl font-bold text-white">
+              {currentProblem.a} {currentProblem.op} {currentProblem.b} = ?
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <input
+              type="number"
+              value={userAnswer}
+              onChange={(e) => setUserAnswer(e.target.value)}
+              placeholder="Answer..."
+              autoFocus
+              className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl text-white text-center text-2xl font-mono focus:border-purple-500 focus:outline-none"
+              onKeyDown={(e) => e.key === 'Enter' && userAnswer && handleSubmit()}
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={!userAnswer}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-medium disabled:opacity-50"
+            >
+              Submit
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="text-center p-6 bg-gray-900/50 rounded-xl">
+          <Trophy className="w-12 h-12 text-amber-400 mx-auto mb-3" />
+          <p className="text-2xl font-bold text-white mb-2">
+            {score}/{totalProblems} Correct!
+          </p>
+          <p className="text-gray-400">
+            {score === totalProblems ? 'Perfect score!' :
+             score >= totalProblems * 0.8 ? 'Great job!' :
+             score >= totalProblems * 0.5 ? 'Good effort!' : 'Keep practicing!'}
+          </p>
         </div>
       )}
     </div>

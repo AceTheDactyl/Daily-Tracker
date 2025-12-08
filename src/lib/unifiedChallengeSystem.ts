@@ -19,7 +19,11 @@ export type MiniGameType =
   | 'riddle'
   | 'math_series'
   | 'color_sequence'
-  | 'card_memory';
+  | 'card_memory'
+  | 'word_scramble'
+  | 'reaction_time'
+  | 'pattern_match'
+  | 'speed_math';
 
 export type ChallengeDifficulty = 'easy' | 'medium' | 'hard' | 'legendary';
 
@@ -77,6 +81,20 @@ export interface MiniGameData {
   // Card memory
   pairs?: number;
   cardSymbols?: string[];
+
+  // Word scramble
+  word?: string;
+  hint?: string;
+
+  // Reaction time
+  targetTime?: number;
+
+  // Pattern match
+  gridSize?: number;
+
+  // Speed math
+  problemCount?: number;
+  timeLimit?: number;
 }
 
 export interface ActiveChallenge extends UnifiedChallenge {
@@ -289,6 +307,48 @@ export function generateCardMemoryGame(pairs: number = 6): MiniGameData {
   };
 }
 
+const WORD_SCRAMBLES: Array<{ word: string; hint: string }> = [
+  { word: 'MINDFUL', hint: 'Being present in the moment' },
+  { word: 'BALANCE', hint: 'Equilibrium between work and rest' },
+  { word: 'RHYTHM', hint: 'A regular pattern of movement or sound' },
+  { word: 'FOCUS', hint: 'Concentrated attention on something' },
+  { word: 'BREATHE', hint: 'Essential for relaxation' },
+  { word: 'WELLNESS', hint: 'State of being in good health' },
+  { word: 'HARMONY', hint: 'Things working together in peace' },
+  { word: 'GRATITUDE', hint: 'Feeling thankful' },
+  { word: 'SERENITY', hint: 'State of calm and peace' },
+  { word: 'COURAGE', hint: 'Facing fears bravely' },
+];
+
+export function generateWordScramble(date: string): MiniGameData {
+  const seed = hashCode(date + 'word');
+  const index = Math.abs(seed) % WORD_SCRAMBLES.length;
+  const wordData = WORD_SCRAMBLES[index];
+  return {
+    word: wordData.word,
+    hint: wordData.hint,
+  };
+}
+
+export function generateReactionTime(): MiniGameData {
+  return {
+    targetTime: 0.5, // 500ms target
+  };
+}
+
+export function generatePatternMatch(): MiniGameData {
+  return {
+    gridSize: 3,
+  };
+}
+
+export function generateSpeedMath(): MiniGameData {
+  return {
+    problemCount: 5,
+    timeLimit: 30,
+  };
+}
+
 function hashCode(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -476,6 +536,54 @@ export const UNIFIED_CHALLENGE_POOL: UnifiedChallenge[] = [
     xpReward: 70,
     cosmeticRewardId: 'card_memory_master',
     icon: '🃏',
+    requirement: { type: 'mini_game', target: 1 },
+  },
+  {
+    id: 'word_unscramble',
+    title: 'Word Wizard',
+    description: 'Unscramble the wellness word',
+    type: 'mini_game',
+    miniGameType: 'word_scramble',
+    difficulty: 'easy',
+    xpReward: 40,
+    cosmeticRewardId: 'gradient_word_flow',
+    icon: '📝',
+    requirement: { type: 'mini_game', target: 1 },
+  },
+  {
+    id: 'reaction_test',
+    title: 'Quick Reflexes',
+    description: 'Test your reaction speed',
+    type: 'mini_game',
+    miniGameType: 'reaction_time',
+    difficulty: 'easy',
+    xpReward: 35,
+    cosmeticRewardId: 'accent_quick_pulse',
+    icon: '⚡',
+    requirement: { type: 'mini_game', target: 1 },
+  },
+  {
+    id: 'pattern_recall',
+    title: 'Pattern Master',
+    description: 'Memorize and recreate visual patterns',
+    type: 'mini_game',
+    miniGameType: 'pattern_match',
+    difficulty: 'medium',
+    xpReward: 55,
+    cosmeticRewardId: 'gradient_pattern_grid',
+    icon: '🔲',
+    requirement: { type: 'mini_game', target: 1 },
+  },
+  {
+    id: 'speed_calc',
+    title: 'Speed Calculator',
+    description: 'Solve math problems against the clock',
+    type: 'mini_game',
+    miniGameType: 'speed_math',
+    difficulty: 'hard',
+    xpReward: 80,
+    cosmeticRewardId: 'gradient_speed_surge',
+    icon: '🧮',
     requirement: { type: 'mini_game', target: 1 },
   },
 
@@ -709,6 +817,34 @@ export const MINI_GAME_COSMETICS = [
     colors: ['#6366F1', '#8B5CF6'],
     type: 'card_style' as const,
     rarity: 'rare' as const,
+  },
+  {
+    id: 'gradient_word_flow',
+    name: 'Word Flow',
+    colors: ['#06B6D4', '#14B8A6', '#10B981'],
+    type: 'gradient' as const,
+    rarity: 'uncommon' as const,
+  },
+  {
+    id: 'accent_quick_pulse',
+    name: 'Quick Pulse',
+    colors: ['#FBBF24', '#F59E0B'],
+    type: 'accent_color' as const,
+    rarity: 'common' as const,
+  },
+  {
+    id: 'gradient_pattern_grid',
+    name: 'Pattern Grid',
+    colors: ['#8B5CF6', '#6366F1', '#4F46E5'],
+    type: 'gradient' as const,
+    rarity: 'uncommon' as const,
+  },
+  {
+    id: 'gradient_speed_surge',
+    name: 'Speed Surge',
+    colors: ['#EF4444', '#F97316', '#FBBF24'],
+    type: 'gradient' as const,
+    rarity: 'epic' as const,
   },
   {
     id: 'gradient_midnight_secret',
@@ -983,6 +1119,14 @@ class UnifiedChallengeService {
         return generateColorSequence(4);
       case 'card_memory':
         return generateCardMemoryGame(6);
+      case 'word_scramble':
+        return generateWordScramble(date);
+      case 'reaction_time':
+        return generateReactionTime();
+      case 'pattern_match':
+        return generatePatternMatch();
+      case 'speed_math':
+        return generateSpeedMath();
       default:
         return {};
     }

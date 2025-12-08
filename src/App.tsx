@@ -2170,6 +2170,24 @@ export default function App() {
               // Record action to metrics hub
               metricsHub.recordAction(`challenge_complete_${regionId}`);
             }}
+            onCreateBeat={(beat) => {
+              // Create a new check-in for the challenge/task
+              const entry: CheckIn = {
+                id: Date.now().toString() + Math.random(),
+                category: beat.category,
+                task: beat.task,
+                waveId: beat.waveId,
+                slot: beat.slot,
+                loggedAt: new Date().toISOString(),
+                note: beat.note,
+                done: false,
+                isAnchor: beat.isAnchor,
+              };
+              setCheckIns(prev => [entry, ...prev]);
+              console.log('Beat created for challenge:', beat.task);
+            }}
+            onNavigateToChallenges={() => setCurrentView('challenges')}
+            onNavigateToCosmetics={() => setCurrentView('cosmetics')}
           />
         )}
 
