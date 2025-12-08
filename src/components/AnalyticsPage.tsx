@@ -9,7 +9,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp, BarChart3, Activity, Music,
-  Heart, Brain, ArrowLeft, Clock, Target,
+  Heart, Brain, ArrowLeft, Target,
   Sparkles, Zap, Shield, Waves, AlertTriangle, CheckCircle2,
   Plus, Play, Trash2, ChevronDown, ListMusic, X
 } from 'lucide-react';
@@ -20,7 +20,7 @@ import {
   type MusicSession
 } from '../lib/musicLibrary';
 import { MusicLibrary } from './MusicLibrary';
-import { metricsHub, type EnhancedDeltaHVState, type MetricsSnapshot as HubMetricsSnapshot } from '../lib/metricsHub';
+import { metricsHub, type EnhancedDeltaHVState } from '../lib/metricsHub';
 import { userProfileService, type MetricsSnapshot as ProfileMetricsSnapshot } from '../lib/userProfile';
 import type { DeltaHVState } from '../lib/deltaHVEngine';
 import { storyShuffleEngine, type Playlist } from '../lib/storyShuffleEngine';
@@ -63,16 +63,6 @@ const COLORS = {
   gray: '#6b7280'
 };
 
-const CATEGORY_COLORS: Record<string, string> = {
-  Workout: COLORS.pink,
-  Moderation: COLORS.cyan,
-  Meditation: COLORS.green,
-  Emotion: COLORS.purple,
-  General: COLORS.gray,
-  Journal: COLORS.blue,
-  Anchor: COLORS.amber
-};
-
 // Utility functions
 const sameDay = (a: Date, b: Date): boolean =>
   a.getFullYear() === b.getFullYear() &&
@@ -93,12 +83,6 @@ const getDateRange = (days: number): Date[] => {
     dates.push(date);
   }
   return dates;
-};
-
-const formatDuration = (seconds: number): string => {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-  return `${(seconds / 3600).toFixed(1)}h`;
 };
 
 /**
@@ -173,57 +157,6 @@ function LineChart({
           </text>
         )
       ))}
-    </svg>
-  );
-}
-
-/**
- * Donut Chart
- */
-function DonutChart({
-  data,
-  size = 120,
-  thickness = 20
-}: {
-  data: { label: string; value: number; color: string }[];
-  size?: number;
-  thickness?: number;
-}) {
-  const total = data.reduce((sum, d) => sum + d.value, 0);
-  if (total === 0) {
-    return (
-      <svg width={size} height={size}>
-        <circle cx={size / 2} cy={size / 2} r={(size - thickness) / 2} fill="none" stroke="#374151" strokeWidth={thickness} />
-      </svg>
-    );
-  }
-
-  const radius = (size - thickness) / 2;
-  const circumference = 2 * Math.PI * radius;
-  let currentOffset = 0;
-
-  return (
-    <svg width={size} height={size} className="transform -rotate-90">
-      {data.map((d, i) => {
-        const percentage = d.value / total;
-        const strokeLength = percentage * circumference;
-        const offset = currentOffset;
-        currentOffset += strokeLength;
-        return (
-          <circle
-            key={i}
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke={d.color}
-            strokeWidth={thickness}
-            strokeDasharray={`${strokeLength} ${circumference - strokeLength}`}
-            strokeDashoffset={-offset}
-            strokeLinecap="round"
-          />
-        );
-      })}
     </svg>
   );
 }
@@ -344,127 +277,6 @@ function DeltaHVCard({
           </span>
         ))}
       </div>
-    </div>
-  );
-}
-
-/**
- * Neural Map Visualization
- */
-function NeuralMapViz({
-  metricsState
-}: {
-  metricsState: EnhancedDeltaHVState | null;
-}) {
-  if (!metricsState) {
-    return (
-      <div className="text-center py-12 text-gray-500">
-        <Brain className="w-12 h-12 mx-auto mb-3 opacity-30" />
-        <p>No neural activity data available</p>
-        <p className="text-xs mt-1">Complete tasks and engage with the app to see brain region activation</p>
-      </div>
-    );
-  }
-
-  const { brainActivation, fieldState, deltaHV } = metricsState;
-
-  const fieldColors = {
-    coherent: 'from-emerald-500/20 to-cyan-500/20 border-emerald-500/50',
-    transitioning: 'from-amber-500/20 to-yellow-500/20 border-amber-500/50',
-    fragmented: 'from-rose-500/20 to-red-500/20 border-rose-500/50',
-    dormant: 'from-gray-500/20 to-gray-600/20 border-gray-500/50',
-  };
-
-  const allRegions = [
-    { metric: 'symbolic', label: 'Symbolic Density', color: 'purple', regions: brainActivation.symbolic },
-    { metric: 'resonance', label: 'Resonance Coupling', color: 'cyan', regions: brainActivation.resonance },
-    { metric: 'friction', label: 'Friction Points', color: 'amber', regions: brainActivation.friction },
-    { metric: 'stability', label: 'Harmonic Stability', color: 'emerald', regions: brainActivation.stability },
-  ];
-
-  return (
-    <div className="space-y-6">
-      {/* Field State Overview */}
-      <div className={`rounded-xl p-6 bg-gradient-to-br ${fieldColors[fieldState]} border text-center`}>
-        <div className="flex items-center justify-center gap-2 mb-2">
-          <Brain className="w-8 h-8" />
-          <span className="text-2xl font-bold">{deltaHV}</span>
-          <span className="text-sm text-gray-400">/100</span>
-        </div>
-        <p className="text-lg font-medium capitalize">{fieldState} Field</p>
-        <p className="text-xs text-gray-400 mt-1">
-          {fieldState === 'coherent' && 'High alignment between intention and action'}
-          {fieldState === 'transitioning' && 'Building momentum toward coherence'}
-          {fieldState === 'fragmented' && 'Multiple focus points, scattered energy'}
-          {fieldState === 'dormant' && 'Low activity, awaiting engagement'}
-        </p>
-      </div>
-
-      {/* Brain Region Grid */}
-      <div className="grid md:grid-cols-2 gap-4">
-        {allRegions.map(({ metric, label, color, regions }) => (
-          <div
-            key={metric}
-            className={`rounded-xl bg-gray-900/50 border border-gray-800 p-4`}
-          >
-            <h4 className={`text-sm font-medium text-${color}-400 mb-3`}>{label}</h4>
-            {regions.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {regions.map((region, i) => (
-                  <span
-                    key={i}
-                    className={`px-3 py-1.5 rounded-lg bg-${color}-500/20 text-${color}-300 text-sm`}
-                  >
-                    {region}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-gray-500 italic">No active regions</p>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Source Contributions */}
-      <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
-        <h4 className="text-sm font-medium text-gray-300 mb-3">Metric Sources</h4>
-        <div className="space-y-2">
-          {metricsState.sources.map(source => (
-            <div key={source.id} className="flex items-center justify-between text-sm">
-              <span className="text-gray-400">{source.name}</span>
-              <span className="text-gray-300">{Math.round(source.weight * 100)}% weight</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Music Influence */}
-      {metricsState.musicInfluence && (
-        <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
-          <h4 className="text-sm font-medium text-purple-400 mb-3">🎵 Music Influence</h4>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-gray-500">Skip Ratio</p>
-              <p className={metricsState.musicInfluence.skipRatio > 0.5 ? 'text-amber-400' : 'text-emerald-400'}>
-                {Math.round(metricsState.musicInfluence.skipRatio * 100)}%
-              </p>
-            </div>
-            <div>
-              <p className="text-gray-500">Authorship Score</p>
-              <p className="text-cyan-400">{Math.round(metricsState.musicInfluence.authorshipScore)}</p>
-            </div>
-            <div>
-              <p className="text-gray-500">Healing Progress</p>
-              <p className="text-pink-400">{Math.round(metricsState.musicInfluence.healingProgress)}%</p>
-            </div>
-            <div>
-              <p className="text-gray-500">Emotional Trajectory</p>
-              <p className="text-purple-400 capitalize">{metricsState.musicInfluence.emotionalTrajectory}</p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -604,6 +416,16 @@ function LibraryWithPlaylists() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistEmoji, setNewPlaylistEmoji] = useState('🎵');
+  // Collapsible sections
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    userPlaylists: false,
+    systemPlaylists: false,
+    musicLibrary: false
+  });
+
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -649,146 +471,184 @@ function LibraryWithPlaylists() {
   const systemPlaylists = playlists.filter(p => p.isSystem);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <h2 className="text-2xl font-light flex items-center gap-3">
         <Music className="w-7 h-7 text-purple-400" />
         Music Library
       </h2>
 
-      {/* Playlist Manager Section */}
-      <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-white flex items-center gap-2">
+      {/* User Playlists Section - Collapsible */}
+      <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-xl overflow-hidden">
+        <button
+          onClick={() => toggleSection('userPlaylists')}
+          className="w-full flex items-center justify-between p-4 hover:bg-gray-900/50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
             <ListMusic className="w-5 h-5 text-cyan-400" />
-            Your Playlists
-          </h3>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 rounded-lg transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            New Playlist
-          </button>
-        </div>
+            <h3 className="text-lg font-medium text-white">Your Playlists</h3>
+            <span className="text-sm text-gray-500">({userPlaylists.length})</span>
+          </div>
+          <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${expandedSections.userPlaylists ? 'rotate-180' : ''}`} />
+        </button>
 
-        {/* User Playlists */}
-        {userPlaylists.length > 0 ? (
-          <div className="space-y-3 mb-6">
-            {userPlaylists.map(playlist => (
-              <div
-                key={playlist.id}
-                className="bg-gray-900/50 rounded-xl border border-gray-800 overflow-hidden"
+        {expandedSections.userPlaylists && (
+          <div className="px-4 pb-4 border-t border-gray-800">
+            <div className="flex justify-end mt-3 mb-3">
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-2 px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 rounded-lg text-sm transition-colors"
               >
-                <div className="flex items-center gap-4 p-4">
-                  <span className="text-3xl">{playlist.coverEmoji}</span>
-                  <div className="flex-1">
-                    <h4 className="text-white font-medium">{playlist.name}</h4>
-                    <p className="text-sm text-gray-400">{playlist.trackIds.length} tracks</p>
-                  </div>
-                  <button
-                    onClick={() => playPlaylist(playlist)}
-                    className="p-2 bg-purple-600/20 hover:bg-purple-600/30 rounded-lg transition-colors"
-                    disabled={playlist.trackIds.length === 0}
-                  >
-                    <Play className="w-5 h-5 text-purple-300" />
-                  </button>
-                  <button
-                    onClick={() => setExpandedPlaylist(expandedPlaylist === playlist.id ? null : playlist.id)}
-                    className="p-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
-                  >
-                    <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${
-                      expandedPlaylist === playlist.id ? 'rotate-180' : ''
-                    }`} />
-                  </button>
-                  <button
-                    onClick={() => deletePlaylist(playlist.id)}
-                    className="p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors"
-                  >
-                    <Trash2 className="w-5 h-5 text-red-400" />
-                  </button>
-                </div>
+                <Plus className="w-4 h-4" />
+                New Playlist
+              </button>
+            </div>
 
-                {expandedPlaylist === playlist.id && (
-                  <div className="px-4 pb-4 border-t border-gray-800">
-                    {playlist.trackIds.length > 0 ? (
-                      <div className="space-y-2 mt-3">
-                        {playlist.trackIds.map((trackId, idx) => {
-                          const track = tracks.find(t => t.id === trackId);
-                          if (!track) return null;
-                          return (
-                            <div
-                              key={trackId}
-                              className="flex items-center gap-3 p-2 bg-gray-800/50 rounded-lg"
-                            >
-                              <span className="text-sm text-gray-500 w-6">{idx + 1}</span>
-                              <span className="text-lg">{EMOTIONAL_CATEGORIES[track.categoryId as EmotionalCategoryId]?.icon}</span>
-                              <div className="flex-1">
-                                <div className="text-sm text-white">{track.name}</div>
-                                <div className="text-xs text-gray-500">
-                                  {EMOTIONAL_CATEGORIES[track.categoryId as EmotionalCategoryId]?.name}
-                                </div>
-                              </div>
-                              <button
-                                onClick={() => removeTrackFromPlaylist(playlist.id, trackId)}
-                                className="p-1.5 hover:bg-red-500/20 rounded transition-colors"
-                              >
-                                <X className="w-4 h-4 text-red-400" />
-                              </button>
-                            </div>
-                          );
-                        })}
+            {userPlaylists.length > 0 ? (
+              <div className="space-y-3">
+                {userPlaylists.map(playlist => (
+                  <div
+                    key={playlist.id}
+                    className="bg-gray-900/50 rounded-xl border border-gray-800 overflow-hidden"
+                  >
+                    <div className="flex items-center gap-4 p-3">
+                      <span className="text-2xl">{playlist.coverEmoji}</span>
+                      <div className="flex-1">
+                        <h4 className="text-white font-medium text-sm">{playlist.name}</h4>
+                        <p className="text-xs text-gray-400">{playlist.trackIds.length} tracks</p>
                       </div>
-                    ) : (
-                      <p className="text-sm text-gray-500 text-center py-4">
-                        No tracks yet. Add songs from the DJ tab.
-                      </p>
+                      <button
+                        onClick={() => playPlaylist(playlist)}
+                        className="p-1.5 bg-purple-600/20 hover:bg-purple-600/30 rounded-lg transition-colors"
+                        disabled={playlist.trackIds.length === 0}
+                      >
+                        <Play className="w-4 h-4 text-purple-300" />
+                      </button>
+                      <button
+                        onClick={() => setExpandedPlaylist(expandedPlaylist === playlist.id ? null : playlist.id)}
+                        className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                      >
+                        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${
+                          expandedPlaylist === playlist.id ? 'rotate-180' : ''
+                        }`} />
+                      </button>
+                      <button
+                        onClick={() => deletePlaylist(playlist.id)}
+                        className="p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-400" />
+                      </button>
+                    </div>
+
+                    {expandedPlaylist === playlist.id && (
+                      <div className="px-3 pb-3 border-t border-gray-800">
+                        {playlist.trackIds.length > 0 ? (
+                          <div className="space-y-1.5 mt-2">
+                            {playlist.trackIds.map((trackId, idx) => {
+                              const track = tracks.find(t => t.id === trackId);
+                              if (!track) return null;
+                              return (
+                                <div
+                                  key={trackId}
+                                  className="flex items-center gap-2 p-2 bg-gray-800/50 rounded-lg text-sm"
+                                >
+                                  <span className="text-xs text-gray-500 w-5">{idx + 1}</span>
+                                  <span>{EMOTIONAL_CATEGORIES[track.categoryId as EmotionalCategoryId]?.icon}</span>
+                                  <div className="flex-1 truncate">
+                                    <span className="text-white">{track.name}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => removeTrackFromPlaylist(playlist.id, trackId)}
+                                    className="p-1 hover:bg-red-500/20 rounded transition-colors"
+                                  >
+                                    <X className="w-3 h-3 text-red-400" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-500 text-center py-3">
+                            No tracks yet. Add songs from the DJ tab.
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
+                ))}
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 mb-6 bg-gray-900/30 rounded-xl border border-gray-800">
-            <ListMusic className="w-10 h-10 mx-auto mb-3 text-gray-600" />
-            <p className="text-gray-400">No custom playlists yet</p>
-            <p className="text-sm text-gray-500 mt-1">Create your first playlist to organize your music</p>
+            ) : (
+              <div className="text-center py-6 bg-gray-900/30 rounded-xl border border-gray-800">
+                <ListMusic className="w-8 h-8 mx-auto mb-2 text-gray-600" />
+                <p className="text-sm text-gray-400">No custom playlists yet</p>
+              </div>
+            )}
           </div>
         )}
-
-        {/* System Playlists */}
-        <div className="pt-4 border-t border-gray-800">
-          <h4 className="text-sm text-gray-400 uppercase tracking-wider mb-3">AI-Generated Playlists</h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {systemPlaylists.map(playlist => (
-              <button
-                key={playlist.id}
-                onClick={() => playPlaylist(playlist)}
-                className="p-4 bg-gray-900/50 border border-gray-800 rounded-xl hover:border-gray-700 transition-all text-left"
-                disabled={playlist.trackIds.length === 0}
-              >
-                <span className="text-2xl block mb-2">{playlist.coverEmoji}</span>
-                <h5 className="text-sm text-white font-medium truncate">{playlist.name}</h5>
-                <p className="text-xs text-gray-500">{playlist.trackIds.length} tracks</p>
-                {playlist.basedOnMetric && (
-                  <span className={`mt-2 inline-block px-2 py-0.5 rounded text-xs ${
-                    playlist.basedOnMetric === 'symbolic' ? 'bg-purple-500/20 text-purple-300' :
-                    playlist.basedOnMetric === 'resonance' ? 'bg-cyan-500/20 text-cyan-300' :
-                    playlist.basedOnMetric === 'friction' ? 'bg-amber-500/20 text-amber-300' :
-                    'bg-green-500/20 text-green-300'
-                  }`}>
-                    {playlist.basedOnMetric}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
-      {/* Music Library */}
-      <div className="rounded-xl bg-gray-900/50 border border-gray-800 overflow-hidden">
-        <MusicLibrary compact />
+      {/* System Playlists Section - Collapsible */}
+      <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-xl overflow-hidden">
+        <button
+          onClick={() => toggleSection('systemPlaylists')}
+          className="w-full flex items-center justify-between p-4 hover:bg-gray-900/50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Sparkles className="w-5 h-5 text-purple-400" />
+            <h3 className="text-lg font-medium text-white">AI-Generated Playlists</h3>
+            <span className="text-sm text-gray-500">({systemPlaylists.length})</span>
+          </div>
+          <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${expandedSections.systemPlaylists ? 'rotate-180' : ''}`} />
+        </button>
+
+        {expandedSections.systemPlaylists && (
+          <div className="px-4 pb-4 border-t border-gray-800">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+              {systemPlaylists.map(playlist => (
+                <button
+                  key={playlist.id}
+                  onClick={() => playPlaylist(playlist)}
+                  className="p-3 bg-gray-900/50 border border-gray-800 rounded-lg hover:border-gray-700 transition-all text-left"
+                  disabled={playlist.trackIds.length === 0}
+                >
+                  <span className="text-xl block mb-1">{playlist.coverEmoji}</span>
+                  <h5 className="text-xs text-white font-medium truncate">{playlist.name}</h5>
+                  <p className="text-xs text-gray-500">{playlist.trackIds.length} tracks</p>
+                  {playlist.basedOnMetric && (
+                    <span className={`mt-1 inline-block px-1.5 py-0.5 rounded text-xs ${
+                      playlist.basedOnMetric === 'symbolic' ? 'bg-purple-500/20 text-purple-300' :
+                      playlist.basedOnMetric === 'resonance' ? 'bg-cyan-500/20 text-cyan-300' :
+                      playlist.basedOnMetric === 'friction' ? 'bg-amber-500/20 text-amber-300' :
+                      'bg-green-500/20 text-green-300'
+                    }`}>
+                      {playlist.basedOnMetric}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Music Library Section - Collapsible */}
+      <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-xl overflow-hidden">
+        <button
+          onClick={() => toggleSection('musicLibrary')}
+          className="w-full flex items-center justify-between p-4 hover:bg-gray-900/50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Music className="w-5 h-5 text-pink-400" />
+            <h3 className="text-lg font-medium text-white">Full Music Library</h3>
+            <span className="text-sm text-gray-500">({tracks.length} tracks)</span>
+          </div>
+          <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${expandedSections.musicLibrary ? 'rotate-180' : ''}`} />
+        </button>
+
+        {expandedSections.musicLibrary && (
+          <div className="border-t border-gray-800">
+            <MusicLibrary compact />
+          </div>
+        )}
       </div>
 
       {/* Create Playlist Modal */}
@@ -855,19 +715,19 @@ function LibraryWithPlaylists() {
 /**
  * Main Analytics Page Component
  */
-export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'rhythm' | 'music' | 'coherence' | 'neural' | 'library'>('overview');
+export function AnalyticsPage({ checkIns, waves: _waves, onBack }: AnalyticsPageProps) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'coherence' | 'library'>('overview');
   const [timeRange, setTimeRange] = useState<7 | 14 | 30>(7);
   const [musicSessions, setMusicSessions] = useState<MusicSession[]>([]);
+  // Backend data kept for metrics but UI removed
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [coherenceStats, setCoherenceStats] = useState<any>(null);
-  const [listeningTime, setListeningTime] = useState<Record<EmotionalCategoryId, number> | null>(null);
 
   // Real-time metrics from metricsHub
   const [metricsState, setMetricsState] = useState<EnhancedDeltaHVState | null>(null);
   const [profileHistory, setProfileHistory] = useState<ProfileMetricsSnapshot[]>([]);
-  const [metricsHistory, setMetricsHistory] = useState<HubMetricsSnapshot[]>([]);
 
-  // Load music data and subscribe to changes
+  // Load music data and subscribe to changes (backend tracking)
   useEffect(() => {
     const loadMusicData = async () => {
       await musicLibrary.initialize();
@@ -876,9 +736,6 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
 
       const stats = await musicLibrary.getCoherenceStats(timeRange);
       setCoherenceStats(stats);
-
-      const listening = await musicLibrary.getListeningTimeByCategory(timeRange);
-      setListeningTime(listening);
     };
 
     loadMusicData();
@@ -900,9 +757,6 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
     // Get initial state
     const initial = metricsHub.getState();
     if (initial) setMetricsState(initial);
-
-    // Get history
-    setMetricsHistory(metricsHub.getHistory());
 
     return unsubscribe;
   }, []);
@@ -1019,10 +873,7 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: BarChart3 },
-    { id: 'rhythm', label: 'Rhythm', icon: Activity },
-    { id: 'music', label: 'Music', icon: Music },
     { id: 'coherence', label: 'Coherence', icon: Heart },
-    { id: 'neural', label: 'Neural', icon: Brain },
     { id: 'library', label: 'Library', icon: Music }
   ] as const;
 
@@ -1223,331 +1074,195 @@ export function AnalyticsPage({ checkIns, waves, onBack }: AnalyticsPageProps) {
           </div>
         )}
 
-        {/* Rhythm Tab */}
-        {activeTab === 'rhythm' && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-light flex items-center gap-3">
-              <Activity className="w-7 h-7 text-cyan-400" />
-              Rhythm Patterns
-            </h2>
-
-            <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
-              <h3 className="text-sm font-medium text-gray-300 mb-4">Completion Rate by Day</h3>
-              <LineChart
-                data={rhythmAnalytics.dailyStats.map(d => ({ label: d.label, value: d.completionRate }))}
-                width={700}
-                height={250}
-                color={COLORS.cyan}
-                showArea
-              />
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
-                <h3 className="text-sm font-medium text-gray-300 mb-4">Wave Distribution</h3>
-                <div className="flex items-center justify-center gap-6">
-                  <DonutChart
-                    data={waves.filter(w => rhythmAnalytics.waveStats[w.id]).map(w => ({
-                      label: w.name,
-                      value: rhythmAnalytics.waveStats[w.id] || 0,
-                      color: COLORS[w.color as keyof typeof COLORS] || COLORS.gray
-                    }))}
-                    size={120}
-                    thickness={20}
-                  />
-                  <div className="space-y-2">
-                    {waves.filter(w => rhythmAnalytics.waveStats[w.id]).map(w => (
-                      <div key={w.id} className="flex items-center gap-2 text-sm">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[w.color as keyof typeof COLORS] }} />
-                        <span className="text-gray-400">{w.name}</span>
-                        <span className="text-gray-500">({rhythmAnalytics.waveStats[w.id]})</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
-                <h3 className="text-sm font-medium text-gray-300 mb-4">Category Completion</h3>
-                <div className="space-y-3">
-                  {Object.entries(rhythmAnalytics.categoryStats)
-                    .sort((a, b) => b[1].total - a[1].total)
-                    .map(([category, stats]) => {
-                      const rate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-                      return (
-                        <div key={category} className="flex items-center gap-3">
-                          <span className="w-20 text-sm text-gray-400 truncate">{category}</span>
-                          <div className="flex-1 h-3 bg-gray-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{ width: `${rate}%`, backgroundColor: CATEGORY_COLORS[category] || COLORS.gray }}
-                            />
-                          </div>
-                          <span className="w-10 text-sm text-gray-300 text-right">{rate}%</span>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Music Tab */}
-        {activeTab === 'music' && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-light flex items-center gap-3">
-              <Music className="w-7 h-7 text-purple-400" />
-              Music Meditation Analytics
-            </h2>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <StatCard
-                label="Total Sessions"
-                value={coherenceStats?.totalSessions || 0}
-                subValue={`${timeRange} day period`}
-                icon={Music}
-                color="purple"
-              />
-              <StatCard
-                label="Completed"
-                value={coherenceStats?.completedSessions || 0}
-                subValue="Full sessions"
-                icon={Target}
-                color="green"
-              />
-              <StatCard
-                label="Listening Time"
-                value={listeningTime ? formatDuration(Object.values(listeningTime).reduce((a, b) => a + b, 0)) : '—'}
-                subValue="Total duration"
-                icon={Clock}
-                color="cyan"
-              />
-              <StatCard
-                label="Coherent Sessions"
-                value={coherenceStats?.coherentSessions || 0}
-                subValue="Matched expectations"
-                icon={Heart}
-                color="pink"
-              />
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
-                <h3 className="text-sm font-medium text-gray-300 mb-4">Emotional Category Usage</h3>
-                {musicAnalytics.categoryUsage.length > 0 ? (
-                  <div className="flex items-center justify-center gap-6">
-                    <DonutChart data={musicAnalytics.categoryUsage} size={140} thickness={25} />
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {musicAnalytics.categoryUsage.map(cat => (
-                        <div key={cat.label} className="flex items-center gap-2 text-sm">
-                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
-                          <span className="text-gray-400">{cat.icon} {cat.label}</span>
-                          <span className="text-gray-500">({cat.value} • {formatDuration(cat.listeningTime)})</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <Music className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No music sessions yet</p>
-                    <p className="text-xs mt-1">Play some music to see category breakdown</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
-                <h3 className="text-sm font-medium text-gray-300 mb-4">Listening Time by Emotion</h3>
-                {listeningTime && (
-                  <div className="space-y-3">
-                    {Object.entries(listeningTime)
-                      .filter(([_, time]) => time > 0)
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([key, time]) => {
-                        const cat = EMOTIONAL_CATEGORIES[key as EmotionalCategoryId];
-                        const maxTime = Math.max(...Object.values(listeningTime));
-                        return (
-                          <div key={key} className="flex items-center gap-3">
-                            <span className="text-xl">{cat.icon}</span>
-                            <span className="w-20 text-sm text-gray-400 truncate">{cat.name}</span>
-                            <div className="flex-1 h-3 bg-gray-800 rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full"
-                                style={{ width: `${(time / maxTime) * 100}%`, backgroundColor: cat.color }}
-                              />
-                            </div>
-                            <span className="text-sm text-gray-300">{formatDuration(time)}</span>
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Coherence Tab */}
         {activeTab === 'coherence' && (
           <div className="space-y-6">
             <h2 className="text-2xl font-light flex items-center gap-3">
               <Heart className="w-7 h-7 text-pink-400" />
               Emotional Coherence
-            </h2>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <StatCard
-                label="Coherence Rate"
-                value={coherenceStats ? `${Math.round(coherenceStats.coherenceRate)}%` : '—'}
-                subValue="Desired = Experienced"
-                icon={Target}
-                color="pink"
-              />
-              <StatCard
-                label="Avg Mood Change"
-                value={coherenceStats ? (coherenceStats.avgMoodImprovement > 0 ? `+${coherenceStats.avgMoodImprovement.toFixed(1)}` : coherenceStats.avgMoodImprovement.toFixed(1)) : '—'}
-                subValue="Before → After"
-                icon={TrendingUp}
-                color={coherenceStats?.avgMoodImprovement > 0 ? 'green' : 'amber'}
-              />
-              <StatCard
-                label="Sessions w/ Data"
-                value={musicAnalytics.sessionsWithData}
-                subValue={`of ${musicAnalytics.totalSessions} total`}
-                icon={Brain}
-                color="purple"
-              />
-              <StatCard
-                label="Mood Improvement"
-                value={musicAnalytics.avgMoodChange > 0 ? `+${musicAnalytics.avgMoodChange.toFixed(1)}` : musicAnalytics.avgMoodChange.toFixed(1)}
-                subValue="From music sessions"
-                icon={Heart}
-                color={musicAnalytics.avgMoodChange > 0 ? 'green' : 'amber'}
-              />
-            </div>
-
-            <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
-              <h3 className="text-sm font-medium text-gray-300 mb-4">Coherence by Emotional Category</h3>
-              {coherenceStats?.categoryBreakdown && (
-                <div className="space-y-4">
-                  {Object.entries(coherenceStats.categoryBreakdown)
-                    .filter(([_, data]: [string, any]) => data.sessions > 0)
-                    .sort((a: any, b: any) => b[1].sessions - a[1].sessions)
-                    .map(([key, data]: [string, any]) => {
-                      const cat = EMOTIONAL_CATEGORIES[key as EmotionalCategoryId];
-                      const coherenceRate = data.sessions > 0 ? (data.coherentSessions / data.sessions) * 100 : 0;
-                      return (
-                        <div key={key} className="p-3 rounded-lg bg-gray-800/50 border border-gray-700">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xl">{cat.icon}</span>
-                              <span className="font-medium">{cat.name}</span>
-                            </div>
-                            <div className="text-sm text-gray-400">
-                              {data.sessions} sessions
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-3 gap-4 text-sm">
-                            <div>
-                              <p className="text-gray-500">Coherence</p>
-                              <p className="text-lg font-medium" style={{ color: cat.color }}>
-                                {Math.round(coherenceRate)}%
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-gray-500">Coherent</p>
-                              <p className="text-lg">{data.coherentSessions}/{data.sessions}</p>
-                            </div>
-                            <div>
-                              <p className="text-gray-500">Mood Change</p>
-                              <p className={`text-lg ${data.avgMoodChange > 0 ? 'text-emerald-400' : data.avgMoodChange < 0 ? 'text-rose-400' : 'text-gray-400'}`}>
-                                {data.avgMoodChange > 0 ? '+' : ''}{data.avgMoodChange.toFixed(1)}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Neural Tab */}
-        {activeTab === 'neural' && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-light flex items-center gap-3">
-              <Brain className="w-7 h-7 text-purple-400" />
-              Neural Map
               {metricsState?.isLive && (
                 <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full">LIVE</span>
               )}
             </h2>
 
-            <NeuralMapViz metricsState={metricsState} />
-
-            {/* Real-time Metrics History Chart */}
-            {metricsHistory.length > 0 && (
-              <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
-                <h3 className="text-sm font-medium text-gray-300 mb-4">Real-Time Metric Updates</h3>
-                <div className="text-xs text-gray-500 mb-2">
-                  Last {Math.min(metricsHistory.length, 50)} updates
+            {/* Current Field State */}
+            {metricsState && (
+              <div className={`rounded-xl p-6 border text-center ${
+                metricsState.fieldState === 'coherent' ? 'bg-emerald-950/30 border-emerald-500/30' :
+                metricsState.fieldState === 'transitioning' ? 'bg-amber-950/30 border-amber-500/30' :
+                metricsState.fieldState === 'fragmented' ? 'bg-rose-950/30 border-rose-500/30' :
+                'bg-gray-900/50 border-gray-700'
+              }`}>
+                <div className="flex items-center justify-center gap-3 mb-3">
+                  <Brain className={`w-10 h-10 ${
+                    metricsState.fieldState === 'coherent' ? 'text-emerald-400' :
+                    metricsState.fieldState === 'transitioning' ? 'text-amber-400' :
+                    metricsState.fieldState === 'fragmented' ? 'text-rose-400' :
+                    'text-gray-400'
+                  }`} />
+                  <div>
+                    <p className="text-3xl font-bold">{metricsState.deltaHV}</p>
+                    <p className="text-sm text-gray-400">Overall Coherence Score</p>
+                  </div>
                 </div>
-                <div className="overflow-x-auto">
-                  <div className="flex gap-1" style={{ width: `${Math.min(metricsHistory.length, 50) * 10}px` }}>
-                    {metricsHistory.slice(-50).map((snapshot, i) => (
-                      <div
-                        key={i}
-                        className="flex-shrink-0 w-2 rounded-full bg-purple-500"
-                        style={{
-                          height: `${snapshot.deltaHV}px`,
-                          opacity: (i + 1) / 50
-                        }}
-                        title={`ΔHV: ${snapshot.deltaHV} - ${snapshot.trigger}`}
-                      />
-                    ))}
+                <p className={`text-lg font-medium capitalize ${
+                  metricsState.fieldState === 'coherent' ? 'text-emerald-300' :
+                  metricsState.fieldState === 'transitioning' ? 'text-amber-300' :
+                  metricsState.fieldState === 'fragmented' ? 'text-rose-300' :
+                  'text-gray-300'
+                }`}>
+                  {metricsState.fieldState} Field State
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {metricsState.fieldState === 'coherent' && 'Excellent! High alignment between intention and action'}
+                  {metricsState.fieldState === 'transitioning' && 'Building momentum toward coherence'}
+                  {metricsState.fieldState === 'fragmented' && 'Multiple focus points - consider simplifying'}
+                  {metricsState.fieldState === 'dormant' && 'Low activity - engage to build coherence'}
+                </p>
+              </div>
+            )}
+
+            {/* Core Coherence Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatCard
+                label="Coherence Rate"
+                value={metricsState ? `${metricsState.harmonicStability}%` : '—'}
+                subValue="Harmonic stability"
+                icon={Target}
+                color="pink"
+              />
+              <StatCard
+                label="Resonance"
+                value={metricsState ? `${metricsState.resonanceCoupling}%` : '—'}
+                subValue="Rhythm alignment"
+                icon={Waves}
+                color="cyan"
+              />
+              <StatCard
+                label="Friction Level"
+                value={metricsState ? `${metricsState.frictionCoefficient}%` : '—'}
+                subValue={metricsState && metricsState.frictionCoefficient <= 30 ? 'Low friction ✓' : 'Room to improve'}
+                icon={Zap}
+                color={metricsState && metricsState.frictionCoefficient <= 30 ? 'green' : 'amber'}
+              />
+              <StatCard
+                label="Symbolic Density"
+                value={metricsState ? `${metricsState.symbolicDensity}%` : '—'}
+                subValue="Intention clarity"
+                icon={Sparkles}
+                color="purple"
+              />
+            </div>
+
+            {/* Mood Change Over Time */}
+            {profileHistory.length > 0 && (
+              <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-5">
+                <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                  Coherence Trend ({timeRange} days)
+                </h3>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">ΔHV Score Over Time</p>
+                    <LineChart
+                      data={profileHistory.map(p => ({
+                        label: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                        value: p.deltaHV
+                      }))}
+                      width={300}
+                      height={150}
+                      color={COLORS.pink}
+                      showArea
+                    />
+                    {profileHistory.length >= 2 && (
+                      <div className="mt-2 text-sm">
+                        {(() => {
+                          const first = profileHistory[0].deltaHV;
+                          const last = profileHistory[profileHistory.length - 1].deltaHV;
+                          const change = last - first;
+                          return (
+                            <span className={change > 0 ? 'text-emerald-400' : change < 0 ? 'text-rose-400' : 'text-gray-400'}>
+                              {change > 0 ? '↑' : change < 0 ? '↓' : '→'} {Math.abs(change).toFixed(0)} points {change > 0 ? 'improvement' : change < 0 ? 'decline' : 'stable'}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">Stability vs Friction</p>
+                    <LineChart
+                      data={profileHistory.map(p => ({
+                        label: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                        value: Math.round(p.harmonicStability - p.frictionCoefficient + 50) // Normalized to 0-100 scale
+                      }))}
+                      width={300}
+                      height={150}
+                      color={COLORS.cyan}
+                      showArea
+                    />
+                    <p className="mt-2 text-xs text-gray-500">Higher = more stable, lower friction</p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Cross-Reference with Profile */}
+            {/* Daily Coherence Metrics */}
             {profileHistory.length > 0 && (
-              <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-4">
-                <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-cyan-400" />
-                  Profile Metrics Over Time
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-gray-500 mb-2">Symbolic & Resonance</p>
-                    <LineChart
-                      data={profileHistory.map(p => ({
-                        label: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                        value: Math.round((p.symbolicDensity + p.resonanceCoupling) / 2)
-                      }))}
-                      width={300}
-                      height={120}
-                      color={COLORS.purple}
-                      showArea
-                    />
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-2">Friction & Stability</p>
-                    <LineChart
-                      data={profileHistory.map(p => ({
-                        label: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                        value: Math.round((100 - p.frictionCoefficient + p.harmonicStability) / 2)
-                      }))}
-                      width={300}
-                      height={120}
-                      color={COLORS.cyan}
-                      showArea
-                    />
-                  </div>
+              <div className="rounded-xl bg-gray-900/50 border border-gray-800 p-5">
+                <h3 className="text-sm font-medium text-gray-300 mb-4">Daily Coherence Breakdown</h3>
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {profileHistory.slice().reverse().slice(0, 7).map((day, i) => {
+                    const fieldState = day.deltaHV >= 70 ? 'coherent' :
+                                       day.deltaHV >= 40 ? 'transitioning' :
+                                       day.deltaHV > 0 ? 'fragmented' : 'dormant';
+                    return (
+                      <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-gray-800/50">
+                        <div className="w-20 text-sm text-gray-400">
+                          {new Date(day.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        </div>
+                        <div className="flex-1">
+                          <div className="h-3 bg-gray-700 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                fieldState === 'coherent' ? 'bg-emerald-500' :
+                                fieldState === 'transitioning' ? 'bg-amber-500' :
+                                fieldState === 'fragmented' ? 'bg-rose-500' :
+                                'bg-gray-600'
+                              }`}
+                              style={{ width: `${day.deltaHV}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="w-16 text-right">
+                          <span className={`text-sm font-medium ${
+                            fieldState === 'coherent' ? 'text-emerald-400' :
+                            fieldState === 'transitioning' ? 'text-amber-400' :
+                            fieldState === 'fragmented' ? 'text-rose-400' :
+                            'text-gray-400'
+                          }`}>
+                            {day.deltaHV}
+                          </span>
+                        </div>
+                        <div className="w-24 text-right text-xs text-gray-500 capitalize">
+                          {fieldState}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
+              </div>
+            )}
+
+            {/* Health Insights */}
+            <HealthInsights metricsState={metricsState} profileHistory={profileHistory} />
+
+            {/* Empty State */}
+            {!metricsState && profileHistory.length === 0 && (
+              <div className="text-center py-12 text-gray-500">
+                <Heart className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p className="text-lg">No coherence data yet</p>
+                <p className="text-sm mt-2">Complete tasks and activities to track your emotional coherence</p>
               </div>
             )}
           </div>
