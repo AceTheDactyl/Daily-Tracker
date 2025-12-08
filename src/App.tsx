@@ -23,6 +23,7 @@ import { UserProfilePage } from './components/UserProfilePage';
 import { RoadmapView } from './components/RoadmapView';
 import { BrainRegionChallenge } from './components/BrainRegionChallenge';
 import { DJTab } from './components/DJTab';
+import { FocusWellnessTools } from './components/FocusWellnessTools';
 // MetricsDisplay available for use in future enhancements
 // import { MetricsDisplay, InlineMetrics } from './components/MetricsDisplay';
 
@@ -1352,6 +1353,18 @@ export default function App() {
             )}
           </div>
         )}
+
+        {/* Focus & Wellness Tools - Integrated Tabs Section */}
+        <FocusWellnessTools
+          deltaHV={deltaHVState}
+          enhancedMetrics={enhancedMetrics}
+          onOpenFullDJ={() => setMixerOpen(true)}
+          onOpenFullChallenges={() => setGlyphCanvasOpen(true)}
+          onCompleteChallenge={(regionId, xp) => {
+            console.log(`Challenge completed: ${regionId} +${xp}XP`);
+            metricsHub.recordAction(`challenge_complete_${regionId}`);
+          }}
+        />
 
         {/* AI Planner Suggestions (Phase 3 Complete) */}
         {(plannerSuggestions.length > 0 || gcalAuthed) && (
