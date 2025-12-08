@@ -2,7 +2,7 @@
  * Focus & Wellness Tools Component
  *
  * Integrated tabbed section with:
- * - Frequency: Simple tone generator with presets
+ * - Frequency: 3-tier tone generator affecting drawing gradients
  * - Glyph: Drawing canvas with daily challenges and gradient rewards
  * - Metrics: DeltaHV metrics display
  */
@@ -44,39 +44,39 @@ interface FocusWellnessToolsProps {
 
 type ActiveTab = 'metrics' | 'frequency' | 'glyph';
 
-// Gradient definitions
+// Gradient definitions for unlockable palettes
 interface GradientDef {
   id: string;
   name: string;
-  colors: string[];
-  unlockDay: number; // 0 = default/always unlocked
+  colors: string[]; // Base colors that get modulated by frequencies
+  unlockDay: number;
 }
 
 const GRADIENTS: GradientDef[] = [
   { id: 'viridis', name: 'Viridis', colors: ['#440154', '#31688e', '#35b779', '#fde725'], unlockDay: 0 },
-  { id: 'plasma', name: 'Plasma', colors: ['#0d0887', '#7e03a8', '#cc4778', '#f89540', '#f0f921'], unlockDay: 1 },
-  { id: 'inferno', name: 'Inferno', colors: ['#000004', '#420a68', '#932667', '#dd513a', '#fca50a', '#fcffa4'], unlockDay: 2 },
-  { id: 'magma', name: 'Magma', colors: ['#000004', '#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'], unlockDay: 3 },
-  { id: 'ocean', name: 'Ocean', colors: ['#023e8a', '#0077b6', '#0096c7', '#00b4d8', '#48cae4', '#90e0ef'], unlockDay: 5 },
-  { id: 'sunset', name: 'Sunset', colors: ['#ff6b6b', '#ee5a5a', '#f77f00', '#fcbf49', '#eae2b7'], unlockDay: 7 },
-  { id: 'aurora', name: 'Aurora', colors: ['#00ff87', '#60efff', '#0061ff', '#ff00c8', '#ff006e'], unlockDay: 10 },
-  { id: 'cosmic', name: 'Cosmic', colors: ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe'], unlockDay: 14 },
+  { id: 'plasma', name: 'Plasma', colors: ['#0d0887', '#7e03a8', '#cc4778', '#f89540'], unlockDay: 1 },
+  { id: 'inferno', name: 'Inferno', colors: ['#000004', '#932667', '#dd513a', '#fcffa4'], unlockDay: 2 },
+  { id: 'magma', name: 'Magma', colors: ['#000004', '#8c2981', '#de4968', '#fcfdbf'], unlockDay: 3 },
+  { id: 'ocean', name: 'Ocean', colors: ['#023e8a', '#0096c7', '#48cae4', '#90e0ef'], unlockDay: 5 },
+  { id: 'sunset', name: 'Sunset', colors: ['#ff6b6b', '#f77f00', '#fcbf49', '#eae2b7'], unlockDay: 7 },
+  { id: 'aurora', name: 'Aurora', colors: ['#00ff87', '#60efff', '#ff00c8', '#ff006e'], unlockDay: 10 },
+  { id: 'cosmic', name: 'Cosmic', colors: ['#667eea', '#764ba2', '#f5576c', '#4facfe'], unlockDay: 14 },
 ];
 
-// Frequency presets - simplified
+// Frequency presets for the 3-tier system
 interface FrequencyPreset {
   id: string;
   name: string;
   icon: React.ReactNode;
-  freq: number;
+  freqs: [number, number, number];
   description: string;
 }
 
 const FREQUENCY_PRESETS: FrequencyPreset[] = [
-  { id: 'focus', name: 'Focus', icon: <Target className="w-4 h-4" />, freq: 40, description: 'Gamma waves for concentration' },
-  { id: 'calm', name: 'Calm', icon: <Moon className="w-4 h-4" />, freq: 432, description: 'Natural harmonic frequency' },
-  { id: 'heal', name: 'Heal', icon: <Heart className="w-4 h-4" />, freq: 528, description: 'Solfeggio love frequency' },
-  { id: 'energy', name: 'Energy', icon: <Zap className="w-4 h-4" />, freq: 285, description: 'Cellular regeneration' },
+  { id: 'focus', name: 'Focus', icon: <Target className="w-4 h-4" />, freqs: [40, 14, 7], description: 'Gamma + Beta + Theta' },
+  { id: 'calm', name: 'Calm', icon: <Moon className="w-4 h-4" />, freqs: [432, 528, 396], description: 'Solfeggio healing' },
+  { id: 'energy', name: 'Energy', icon: <Zap className="w-4 h-4" />, freqs: [285, 417, 639], description: 'Activation tones' },
+  { id: 'love', name: 'Love', icon: <Heart className="w-4 h-4" />, freqs: [528, 639, 741], description: 'Heart frequencies' },
 ];
 
 // Storage keys
@@ -88,26 +88,67 @@ const STORAGE_KEYS = {
   LAST_DAILY: 'last-daily-glyph',
 };
 
-// Get color from gradient based on frequency (0-1000 Hz mapped to gradient)
-function getGradientColor(gradient: GradientDef, frequency: number): string {
-  if (frequency === 0) return '#ffffff';
+// Generate multi-color based on 3 frequencies and gradient
+// Freq1 controls position in gradient, Freq2 controls saturation, Freq3 controls brightness
+function getMultiColor(gradient: GradientDef, freqs: [number, number, number]): string {
+  const [f1, f2, f3] = freqs;
+
+  // All zeros = white
+  if (f1 === 0 && f2 === 0 && f3 === 0) return '#ffffff';
+
   const colors = gradient.colors;
-  const t = Math.min(frequency / 600, 1); // 0-600Hz maps to full gradient
+
+  // F1: Position in gradient (0-600Hz maps to gradient)
+  const t = Math.min(f1 / 600, 1);
   const idx = t * (colors.length - 1);
   const lower = Math.floor(idx);
   const upper = Math.min(lower + 1, colors.length - 1);
   const mix = idx - lower;
 
-  // Interpolate between colors
   const c1 = hexToRgb(colors[lower]);
   const c2 = hexToRgb(colors[upper]);
   if (!c1 || !c2) return colors[lower];
 
-  const r = Math.round(c1.r + (c2.r - c1.r) * mix);
-  const g = Math.round(c1.g + (c2.g - c1.g) * mix);
-  const b = Math.round(c1.b + (c2.b - c1.b) * mix);
+  let r = c1.r + (c2.r - c1.r) * mix;
+  let g = c1.g + (c2.g - c1.g) * mix;
+  let b = c1.b + (c2.b - c1.b) * mix;
 
-  return `rgb(${r},${g},${b})`;
+  // F2: Saturation boost (0-1000Hz, higher = more saturated)
+  const satBoost = Math.min(f2 / 500, 1);
+  const gray = (r + g + b) / 3;
+  r = gray + (r - gray) * (0.5 + satBoost * 0.5);
+  g = gray + (g - gray) * (0.5 + satBoost * 0.5);
+  b = gray + (b - gray) * (0.5 + satBoost * 0.5);
+
+  // F3: Brightness/luminance shift (0-1000Hz, higher = brighter)
+  const brightBoost = Math.min(f3 / 800, 1);
+  r = r + (255 - r) * brightBoost * 0.3;
+  g = g + (255 - g) * brightBoost * 0.3;
+  b = b + (255 - b) * brightBoost * 0.3;
+
+  return `rgb(${Math.round(Math.max(0, Math.min(255, r)))},${Math.round(Math.max(0, Math.min(255, g)))},${Math.round(Math.max(0, Math.min(255, b)))})`;
+}
+
+// Create a canvas gradient from the 3 frequencies
+function createStrokeGradient(
+  ctx: CanvasRenderingContext2D,
+  gradient: GradientDef,
+  freqs: [number, number, number],
+  x1: number, y1: number, x2: number, y2: number
+): CanvasGradient {
+  const canvasGrad = ctx.createLinearGradient(x1, y1, x2, y2);
+
+  // Generate multiple colors based on frequency variations
+  const [f1, f2, f3] = freqs;
+
+  // Color 1: Base from f1
+  canvasGrad.addColorStop(0, getMultiColor(gradient, [f1, f2, f3]));
+  // Color 2: Shifted by f2
+  canvasGrad.addColorStop(0.5, getMultiColor(gradient, [f1 + f2 * 0.3, f2 * 0.8, f3 * 1.2]));
+  // Color 3: Shifted by f3
+  canvasGrad.addColorStop(1, getMultiColor(gradient, [f1 * 0.7 + f3 * 0.3, f2 * 1.1, f3]));
+
+  return canvasGrad;
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -138,12 +179,12 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
   const [activeTab, setActiveTab] = useState<ActiveTab>('metrics');
   const [isExpanded, setIsExpanded] = useState(true);
 
-  // Frequency State - simplified
-  const [frequency, setFrequency] = useState(432);
+  // 3-Tier Frequency State
+  const [freqs, setFreqs] = useState<[number, number, number]>([432, 528, 396]);
   const [isPlaying, setIsPlaying] = useState(false);
   const audioCtx = useRef<AudioContext | null>(null);
-  const oscillator = useRef<OscillatorNode | null>(null);
-  const gainNode = useRef<GainNode | null>(null);
+  const oscillators = useRef<(OscillatorNode | null)[]>([null, null, null]);
+  const gainNodes = useRef<(GainNode | null)[]>([null, null, null]);
 
   // Glyph/Drawing State
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -156,6 +197,7 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
   const [dailyStreak, setDailyStreak] = useState(0);
   const [dailyCompleted, setDailyCompleted] = useState(false);
   const [showGradientPicker, setShowGradientPicker] = useState(false);
+  const [lastPoint, setLastPoint] = useState<{x: number, y: number} | null>(null);
 
   // Get today's daily prompt
   const dailyPrompt = useMemo(() => {
@@ -184,7 +226,6 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
         const lastDate = new Date(lastDaily).toDateString();
         setDailyCompleted(today === lastDate);
 
-        // Check if streak is broken (missed a day)
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         if (lastDate !== today && lastDate !== yesterday.toDateString()) {
@@ -197,13 +238,6 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
     }
   }, []);
 
-  // Stop audio when switching tabs away from frequency
-  useEffect(() => {
-    if (activeTab !== 'frequency' && isPlaying) {
-      stopAudio();
-    }
-  }, [activeTab]);
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -211,38 +245,24 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
     };
   }, []);
 
-  // Initialize canvas with gradient stroke
+  // Initialize canvas
   useEffect(() => {
     if (showCanvas && canvasRef.current) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Set canvas size
       const rect = canvas.getBoundingClientRect();
       canvas.width = rect.width * window.devicePixelRatio;
       canvas.height = rect.height * window.devicePixelRatio;
       ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-
-      // Set stroke style based on frequency and gradient
-      ctx.strokeStyle = getGradientColor(selectedGradient, frequency);
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 5;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
     }
-  }, [showCanvas, selectedGradient, frequency]);
+  }, [showCanvas]);
 
-  // Update stroke color when frequency changes
-  useEffect(() => {
-    if (canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d');
-      if (ctx) {
-        ctx.strokeStyle = getGradientColor(selectedGradient, frequency);
-      }
-    }
-  }, [frequency, selectedGradient]);
-
-  // Audio controls
+  // Audio controls - 3 oscillators
   const startAudio = useCallback(() => {
     if (!audioCtx.current) {
       audioCtx.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
@@ -252,33 +272,46 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
       audioCtx.current.resume();
     }
 
-    oscillator.current = audioCtx.current.createOscillator();
-    gainNode.current = audioCtx.current.createGain();
+    for (let i = 0; i < 3; i++) {
+      if (freqs[i] > 0) {
+        const osc = audioCtx.current.createOscillator();
+        const gain = audioCtx.current.createGain();
 
-    oscillator.current.type = 'sine';
-    oscillator.current.frequency.setValueAtTime(frequency, audioCtx.current.currentTime);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freqs[i], audioCtx.current.currentTime);
 
-    gainNode.current.gain.setValueAtTime(0, audioCtx.current.currentTime);
-    gainNode.current.gain.linearRampToValueAtTime(0.15, audioCtx.current.currentTime + 0.3);
+        gain.gain.setValueAtTime(0, audioCtx.current.currentTime);
+        gain.gain.linearRampToValueAtTime(0.1, audioCtx.current.currentTime + 0.3);
 
-    oscillator.current.connect(gainNode.current);
-    gainNode.current.connect(audioCtx.current.destination);
-    oscillator.current.start();
+        osc.connect(gain);
+        gain.connect(audioCtx.current.destination);
+        osc.start();
+
+        oscillators.current[i] = osc;
+        gainNodes.current[i] = gain;
+      }
+    }
 
     setIsPlaying(true);
-  }, [frequency]);
+  }, [freqs]);
 
   const stopAudio = useCallback(() => {
-    if (gainNode.current && audioCtx.current) {
-      gainNode.current.gain.linearRampToValueAtTime(0, audioCtx.current.currentTime + 0.2);
-      setTimeout(() => {
-        try {
-          oscillator.current?.stop();
-        } catch {}
-        oscillator.current = null;
-        gainNode.current = null;
-      }, 250);
+    for (let i = 0; i < 3; i++) {
+      if (gainNodes.current[i] && audioCtx.current) {
+        gainNodes.current[i]!.gain.linearRampToValueAtTime(0, audioCtx.current.currentTime + 0.2);
+      }
     }
+
+    setTimeout(() => {
+      for (let i = 0; i < 3; i++) {
+        try {
+          oscillators.current[i]?.stop();
+        } catch {}
+        oscillators.current[i] = null;
+        gainNodes.current[i] = null;
+      }
+    }, 250);
+
     setIsPlaying(false);
   }, []);
 
@@ -290,19 +323,33 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
     }
   }, [isPlaying, startAudio, stopAudio]);
 
-  // Update frequency while playing
-  const handleFrequencyChange = useCallback((newFreq: number) => {
-    setFrequency(newFreq);
-    if (isPlaying && oscillator.current && audioCtx.current) {
-      oscillator.current.frequency.setValueAtTime(newFreq, audioCtx.current.currentTime);
+  // Update individual frequency
+  const handleFreqChange = useCallback((index: number, value: number) => {
+    setFreqs(prev => {
+      const next = [...prev] as [number, number, number];
+      next[index] = value;
+      return next;
+    });
+
+    if (isPlaying && oscillators.current[index] && audioCtx.current) {
+      if (value > 0) {
+        oscillators.current[index]!.frequency.setValueAtTime(value, audioCtx.current.currentTime);
+      }
     }
   }, [isPlaying]);
 
   const applyPreset = useCallback((preset: FrequencyPreset) => {
-    handleFrequencyChange(preset.freq);
-  }, [handleFrequencyChange]);
+    setFreqs(preset.freqs);
+    if (isPlaying) {
+      preset.freqs.forEach((freq, i) => {
+        if (oscillators.current[i] && audioCtx.current && freq > 0) {
+          oscillators.current[i]!.frequency.setValueAtTime(freq, audioCtx.current.currentTime);
+        }
+      });
+    }
+  }, [isPlaying]);
 
-  // Drawing functions
+  // Drawing functions with multi-color gradient strokes
   const getCanvasCoords = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -315,28 +362,37 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
   const startDrawing = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     setIsDrawing(true);
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
     const { x, y } = getCanvasCoords(e);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
+    setLastPoint({ x, y });
   }, [getCanvasCoords]);
 
   const draw = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
+    if (!isDrawing || !lastPoint) return;
     e.preventDefault();
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
     const { x, y } = getCanvasCoords(e);
+
+    // Create gradient stroke based on 3 frequencies
+    const gradient = createStrokeGradient(ctx, selectedGradient, freqs, lastPoint.x, lastPoint.y, x, y);
+    ctx.strokeStyle = gradient;
+
+    ctx.beginPath();
+    ctx.moveTo(lastPoint.x, lastPoint.y);
     ctx.lineTo(x, y);
     ctx.stroke();
-  }, [isDrawing, getCanvasCoords]);
 
-  const stopDrawing = useCallback(() => setIsDrawing(false), []);
+    setLastPoint({ x, y });
+  }, [isDrawing, lastPoint, getCanvasCoords, selectedGradient, freqs]);
+
+  const stopDrawing = useCallback(() => {
+    setIsDrawing(false);
+    setLastPoint(null);
+  }, []);
 
   const clearCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -352,14 +408,12 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
 
     const dataUrl = canvas.toDataURL('image/png');
 
-    // Save to gallery
     setSavedGlyphs(prev => {
       const updated = [dataUrl, ...prev].slice(0, 20);
       localStorage.setItem(STORAGE_KEYS.GLYPHS, JSON.stringify(updated));
       return updated;
     });
 
-    // Award XP
     const xpEarned = isDaily ? 50 : 25;
     setTotalXP(prev => {
       const updated = prev + xpEarned;
@@ -367,7 +421,6 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
       return updated;
     });
 
-    // Handle daily completion
     if (isDaily && !dailyCompleted) {
       const newStreak = dailyStreak + 1;
       setDailyStreak(newStreak);
@@ -375,7 +428,6 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
       localStorage.setItem(STORAGE_KEYS.DAILY_STREAK, newStreak.toString());
       localStorage.setItem(STORAGE_KEYS.LAST_DAILY, new Date().toISOString());
 
-      // Check for gradient unlocks
       const newUnlocks = GRADIENTS.filter(g =>
         g.unlockDay <= newStreak && !unlockedGradients.includes(g.id)
       ).map(g => g.id);
@@ -415,6 +467,9 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
       }}
     />
   );
+
+  // Current stroke color preview
+  const currentStrokeColor = getMultiColor(selectedGradient, freqs);
 
   return (
     <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-2xl overflow-hidden">
@@ -468,9 +523,7 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
           >
             <Pencil className="w-4 h-4" />
             <span className="hidden sm:inline">Draw</span>
-            {!dailyCompleted && (
-              <span className="w-2 h-2 bg-amber-400 rounded-full" title="Daily available" />
-            )}
+            {!dailyCompleted && <span className="w-2 h-2 bg-amber-400 rounded-full" />}
           </button>
         </div>
       </div>
@@ -483,7 +536,6 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
             <div className="space-y-4">
               {deltaHV && (
                 <>
-                  {/* DeltaHV Score */}
                   <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-900/30 to-cyan-900/30 border border-purple-500/20">
                     <div className="flex items-center gap-3">
                       <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
@@ -510,50 +562,25 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                     </div>
                   </div>
 
-                  {/* Core Metrics Grid */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-gray-900/60 rounded-xl p-3 border border-violet-800/30">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm text-violet-300">Symbolic</span>
-                        <span className="text-lg font-bold text-violet-400">{deltaHV.symbolicDensity}%</span>
+                    {[
+                      { label: 'Symbolic', value: deltaHV.symbolicDensity, color: 'violet' },
+                      { label: 'Resonance', value: deltaHV.resonanceCoupling, color: 'cyan' },
+                      { label: 'Friction', value: deltaHV.frictionCoefficient, color: 'orange' },
+                      { label: 'Stability', value: deltaHV.harmonicStability, color: 'emerald' },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} className={`bg-gray-900/60 rounded-xl p-3 border border-${color}-800/30`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-sm text-${color}-300`}>{label}</span>
+                          <span className={`text-lg font-bold text-${color}-400`}>{value}%</span>
+                        </div>
+                        <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                          <div className={`h-full bg-${color}-500 rounded-full transition-all`} style={{ width: `${value}%` }} />
+                        </div>
                       </div>
-                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${deltaHV.symbolicDensity}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="bg-gray-900/60 rounded-xl p-3 border border-cyan-800/30">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm text-cyan-300">Resonance</span>
-                        <span className="text-lg font-bold text-cyan-400">{deltaHV.resonanceCoupling}%</span>
-                      </div>
-                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-cyan-500 rounded-full transition-all" style={{ width: `${deltaHV.resonanceCoupling}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="bg-gray-900/60 rounded-xl p-3 border border-orange-800/30">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm text-orange-300">Friction</span>
-                        <span className="text-lg font-bold text-orange-400">{deltaHV.frictionCoefficient}%</span>
-                      </div>
-                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${deltaHV.frictionCoefficient}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="bg-gray-900/60 rounded-xl p-3 border border-emerald-800/30">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm text-emerald-300">Stability</span>
-                        <span className="text-lg font-bold text-emerald-400">{deltaHV.harmonicStability}%</span>
-                      </div>
-                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${deltaHV.harmonicStability}%` }} />
-                      </div>
-                    </div>
+                    ))}
                   </div>
 
-                  {/* Music Influence */}
                   {enhancedMetrics?.musicInfluence && enhancedMetrics.musicInfluence.authorshipScore > 0 && (
                     <div className="p-3 bg-gray-900/40 rounded-xl border border-purple-800/30">
                       <div className="flex items-center justify-between">
@@ -577,22 +604,31 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
             </div>
           )}
 
-          {/* Frequency Tab - Simplified */}
+          {/* Frequency Tab - 3 Tiers */}
           {activeTab === 'frequency' && (
             <div className="space-y-4">
-              {/* Current Frequency Display */}
-              <div className="text-center py-4">
-                <p className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-pink-400">
-                  {frequency} <span className="text-2xl">Hz</span>
-                </p>
-                <p className="text-sm text-gray-500 mt-1">
-                  {frequency === 0 ? 'Silent' :
-                   frequency < 20 ? 'Sub-bass' :
-                   frequency < 60 ? 'Bass' :
-                   frequency < 250 ? 'Low-mid' :
-                   frequency < 500 ? 'Mid' :
-                   frequency < 800 ? 'High-mid' : 'High'}
-                </p>
+              {/* Frequency Display */}
+              <div className="grid grid-cols-3 gap-2 text-center">
+                {['Hue', 'Saturation', 'Brightness'].map((label, i) => (
+                  <div key={label} className="p-2 bg-gray-900/50 rounded-lg">
+                    <p className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-pink-400">
+                      {freqs[i]}
+                    </p>
+                    <p className="text-xs text-gray-500">{label} Hz</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Color Preview */}
+              <div className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-xl">
+                <div
+                  className="w-10 h-10 rounded-lg border border-gray-600"
+                  style={{ backgroundColor: currentStrokeColor }}
+                />
+                <div className="flex-1">
+                  <p className="text-sm text-gray-400">Current Stroke Color</p>
+                  <p className="text-xs text-gray-600">Based on frequency mix</p>
+                </div>
               </div>
 
               {/* Presets */}
@@ -601,73 +637,61 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                   <button
                     key={preset.id}
                     onClick={() => applyPreset(preset)}
-                    className={`p-3 rounded-xl flex flex-col items-center gap-1 transition-all ${
-                      frequency === preset.freq
+                    className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                      freqs[0] === preset.freqs[0] && freqs[1] === preset.freqs[1] && freqs[2] === preset.freqs[2]
                         ? 'bg-violet-600/30 border-2 border-violet-400'
                         : 'bg-gray-900/50 border border-gray-800 hover:border-violet-500/50'
                     }`}
                   >
-                    <span className={frequency === preset.freq ? 'text-violet-300' : 'text-gray-400'}>
-                      {preset.icon}
-                    </span>
-                    <span className={`text-xs ${frequency === preset.freq ? 'text-violet-300' : 'text-gray-400'}`}>
-                      {preset.name}
-                    </span>
+                    <span className="text-gray-400">{preset.icon}</span>
+                    <span className="text-xs text-gray-400">{preset.name}</span>
                   </button>
                 ))}
               </div>
 
-              {/* Frequency Slider */}
-              <div className="space-y-2">
-                <input
-                  type="range"
-                  min={0}
-                  max={1000}
-                  value={frequency}
-                  onChange={(e) => handleFrequencyChange(parseInt(e.target.value))}
-                  className="w-full h-3 bg-gray-800 rounded-full appearance-none cursor-pointer accent-violet-500"
-                  style={{
-                    background: `linear-gradient(to right, ${selectedGradient.colors.join(', ')})`
-                  }}
-                />
-                <div className="flex justify-between text-xs text-gray-600">
-                  <span>0</span>
-                  <span>250</span>
-                  <span>500</span>
-                  <span>750</span>
-                  <span>1000</span>
-                </div>
+              {/* 3 Frequency Sliders */}
+              <div className="space-y-3 p-3 bg-gray-900/40 rounded-xl">
+                {[
+                  { label: 'Layer 1 (Hue)', color: 'violet' },
+                  { label: 'Layer 2 (Saturation)', color: 'pink' },
+                  { label: 'Layer 3 (Brightness)', color: 'amber' },
+                ].map(({ label, color }, i) => (
+                  <div key={i}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-gray-500">{label}</span>
+                      <span className={`text-${color}-400`}>{freqs[i]} Hz</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1000}
+                      value={freqs[i]}
+                      onChange={(e) => handleFreqChange(i, parseInt(e.target.value))}
+                      className={`w-full h-2 bg-gray-800 rounded-full appearance-none cursor-pointer accent-${color}-500`}
+                    />
+                  </div>
+                ))}
               </div>
 
-              {/* Play/Stop Button */}
+              {/* Play Button */}
               <button
                 onClick={toggleAudio}
-                className={`w-full py-4 rounded-xl font-medium flex items-center justify-center gap-3 transition-all ${
+                className={`w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
                   isPlaying
                     ? 'bg-rose-600 hover:bg-rose-500 text-white'
                     : 'bg-violet-600 hover:bg-violet-500 text-white'
                 }`}
               >
-                {isPlaying ? (
-                  <>
-                    <VolumeX className="w-5 h-5" />
-                    Stop Tone
-                  </>
-                ) : (
-                  <>
-                    <Volume2 className="w-5 h-5" />
-                    Play Tone
-                  </>
-                )}
+                {isPlaying ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                {isPlaying ? 'Stop Tones' : 'Play Tones'}
               </button>
 
-              {/* Full DJ Mode */}
               {onOpenFullDJ && (
                 <button
                   onClick={onOpenFullDJ}
-                  className="w-full py-2 rounded-xl bg-gray-900/50 hover:bg-gray-800/50 text-gray-400 text-sm font-medium transition-colors border border-gray-800"
+                  className="w-full py-2 rounded-xl bg-gray-900/50 hover:bg-gray-800/50 text-gray-400 text-sm transition-colors border border-gray-800"
                 >
-                  Open Full Music Mixer
+                  Open Full DJ Mode
                 </button>
               )}
             </div>
@@ -676,7 +700,6 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
           {/* Glyph/Drawing Tab */}
           {activeTab === 'glyph' && (
             <div className="space-y-4">
-              {/* Canvas Mode */}
               {showCanvas ? (
                 <div className="space-y-3">
                   {/* Canvas Header */}
@@ -685,25 +708,20 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                       <button
                         onClick={() => setShowGradientPicker(!showGradientPicker)}
                         className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
-                        title="Select gradient"
                       >
                         {renderGradientPreview(selectedGradient, 20)}
                       </button>
-                      <span className="text-sm text-gray-400">{selectedGradient.name}</span>
+                      <div
+                        className="w-5 h-5 rounded-full border border-gray-600"
+                        style={{ backgroundColor: currentStrokeColor }}
+                        title="Current color from frequencies"
+                      />
                     </div>
                     <div className="flex gap-2">
-                      <button
-                        onClick={clearCanvas}
-                        className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
-                        title="Clear"
-                      >
+                      <button onClick={clearCanvas} className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700">
                         <Trash2 className="w-4 h-4 text-gray-400" />
                       </button>
-                      <button
-                        onClick={downloadGlyph}
-                        className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
-                        title="Download"
-                      >
+                      <button onClick={downloadGlyph} className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700">
                         <Download className="w-4 h-4 text-gray-400" />
                       </button>
                     </div>
@@ -711,8 +729,8 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
 
                   {/* Gradient Picker */}
                   {showGradientPicker && (
-                    <div className="p-3 bg-gray-900/80 rounded-xl border border-gray-700 space-y-2">
-                      <p className="text-xs text-gray-500 uppercase tracking-wider">Select Gradient</p>
+                    <div className="p-3 bg-gray-900/80 rounded-xl border border-gray-700">
+                      <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Select Gradient</p>
                       <div className="grid grid-cols-4 gap-2">
                         {GRADIENTS.map(gradient => {
                           const isUnlocked = unlockedGradients.includes(gradient.id);
@@ -721,7 +739,7 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                               key={gradient.id}
                               onClick={() => isUnlocked && setSelectedGradient(gradient)}
                               disabled={!isUnlocked}
-                              className={`p-2 rounded-lg flex flex-col items-center gap-1 transition-all ${
+                              className={`p-2 rounded-lg flex flex-col items-center gap-1 ${
                                 selectedGradient.id === gradient.id
                                   ? 'bg-violet-600/30 border-2 border-violet-400'
                                   : isUnlocked
@@ -729,14 +747,11 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                                     : 'bg-gray-900/50 border border-gray-800 opacity-50'
                               }`}
                             >
-                              {renderGradientPreview(gradient, 28)}
+                              {renderGradientPreview(gradient, 24)}
                               <span className="text-xs text-gray-400 flex items-center gap-1">
                                 {!isUnlocked && <Lock className="w-3 h-3" />}
                                 {gradient.name}
                               </span>
-                              {!isUnlocked && (
-                                <span className="text-xs text-gray-600">Day {gradient.unlockDay}</span>
-                              )}
                             </button>
                           );
                         })}
@@ -744,26 +759,19 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                     </div>
                   )}
 
-                  {/* Frequency affects stroke color hint */}
-                  <div className="flex items-center gap-2 px-3 py-2 bg-gray-900/50 rounded-lg">
-                    <div
-                      className="w-4 h-4 rounded-full border border-gray-600"
-                      style={{ backgroundColor: getGradientColor(selectedGradient, frequency) }}
-                    />
-                    <span className="text-xs text-gray-500">
-                      Stroke color: {frequency === 0 ? 'White' : `${frequency} Hz`}
-                    </span>
-                    <span className="text-xs text-gray-600 ml-auto">Adjust in Tones tab</span>
-                  </div>
+                  {/* Hint */}
+                  <p className="text-xs text-gray-600 text-center">
+                    Adjust Tones tab frequencies to change stroke colors
+                  </p>
 
                   {/* Large Canvas */}
                   <canvas
                     ref={canvasRef}
                     className="w-full rounded-xl border-2 touch-none cursor-crosshair"
                     style={{
-                      height: '280px',
-                      backgroundColor: '#0a0a0a',
-                      borderColor: getGradientColor(selectedGradient, frequency),
+                      height: '360px',
+                      backgroundColor: '#050505',
+                      borderColor: currentStrokeColor,
                     }}
                     onMouseDown={startDrawing}
                     onMouseMove={draw}
@@ -774,26 +782,25 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                     onTouchEnd={stopDrawing}
                   />
 
-                  {/* Action Buttons */}
+                  {/* Actions */}
                   <div className="flex gap-2">
                     <button
                       onClick={() => { clearCanvas(); setShowCanvas(false); }}
-                      className="flex-1 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium transition-colors"
+                      className="flex-1 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={() => saveGlyph(false)}
-                      className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
+                      className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium"
                     >
-                      Save Glyph (+25 XP)
+                      Save (+25 XP)
                     </button>
                   </div>
                 </div>
               ) : (
-                /* List Mode */
                 <>
-                  {/* Stats Bar */}
+                  {/* Stats */}
                   <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-900/50 border border-gray-800">
                     <div className="flex items-center gap-2">
                       <Trophy className="w-5 h-5 text-amber-400" />
@@ -802,7 +809,7 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                     <div className="h-6 w-px bg-gray-700" />
                     <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-violet-400" />
-                      <span className="text-sm text-violet-300">{dailyStreak} day streak</span>
+                      <span className="text-sm text-violet-300">{dailyStreak} days</span>
                     </div>
                     <div className="h-6 w-px bg-gray-700" />
                     <div className="flex items-center gap-2">
@@ -812,7 +819,7 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                   </div>
 
                   {/* Daily Challenge */}
-                  <div className={`p-4 rounded-xl border-2 transition-all ${
+                  <div className={`p-4 rounded-xl border-2 ${
                     dailyCompleted
                       ? 'bg-emerald-950/30 border-emerald-600/40'
                       : 'bg-gradient-to-r from-amber-900/30 to-orange-900/30 border-amber-500/40'
@@ -821,16 +828,12 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                       <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
                         dailyCompleted ? 'bg-emerald-600/30' : 'bg-amber-600/30'
                       }`}>
-                        {dailyCompleted ? (
-                          <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-                        ) : (
-                          <Gift className="w-6 h-6 text-amber-400" />
-                        )}
+                        {dailyCompleted ? <CheckCircle2 className="w-6 h-6 text-emerald-400" /> : <Gift className="w-6 h-6 text-amber-400" />}
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <p className={`font-medium ${dailyCompleted ? 'text-emerald-300' : 'text-white'}`}>
-                            Daily Glyph Challenge
+                            Daily Glyph
                           </p>
                           <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">+50 XP</span>
                         </div>
@@ -838,28 +841,26 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                         {!dailyCompleted && (
                           <button
                             onClick={() => setShowCanvas(true)}
-                            className="mt-3 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-black text-sm font-medium transition-colors"
+                            className="mt-3 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-black text-sm font-medium"
                           >
-                            Start Daily Challenge
+                            Start Daily
                           </button>
                         )}
-                        {dailyCompleted && (
-                          <p className="text-xs text-emerald-400 mt-2">Completed! Come back tomorrow.</p>
-                        )}
+                        {dailyCompleted && <p className="text-xs text-emerald-400 mt-2">Done! Come back tomorrow.</p>}
                       </div>
                     </div>
                   </div>
 
-                  {/* Quick Draw Button */}
+                  {/* Free Draw */}
                   <button
                     onClick={() => setShowCanvas(true)}
-                    className="w-full py-3 rounded-xl bg-gray-900/50 border border-gray-800 hover:border-violet-500/50 text-white font-medium flex items-center justify-center gap-2 transition-colors"
+                    className="w-full py-3 rounded-xl bg-gray-900/50 border border-gray-800 hover:border-violet-500/50 text-white font-medium flex items-center justify-center gap-2"
                   >
                     <Pencil className="w-5 h-5 text-violet-400" />
                     Free Draw (+25 XP)
                   </button>
 
-                  {/* Next Gradient Unlock */}
+                  {/* Next Unlock */}
                   {unlockedGradients.length < GRADIENTS.length && (
                     <div className="p-3 rounded-xl bg-gray-900/50 border border-gray-800">
                       <div className="flex items-center gap-3">
@@ -872,7 +873,7 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                               {GRADIENTS.find(g => !unlockedGradients.includes(g.id))?.name}
                             </span>
                             <span className="text-xs text-gray-500">
-                              ({(GRADIENTS.find(g => !unlockedGradients.includes(g.id))?.unlockDay || 0) - dailyStreak} days)
+                              ({Math.max(0, (GRADIENTS.find(g => !unlockedGradients.includes(g.id))?.unlockDay || 0) - dailyStreak)} days)
                             </span>
                           </div>
                         </div>
@@ -880,7 +881,7 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                     </div>
                   )}
 
-                  {/* Saved Glyphs Gallery */}
+                  {/* Gallery */}
                   {savedGlyphs.length > 0 && (
                     <div className="space-y-2">
                       <p className="text-xs text-gray-500 uppercase tracking-wider">Gallery ({savedGlyphs.length})</p>
