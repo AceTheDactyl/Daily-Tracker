@@ -15,7 +15,6 @@ import {
   ChevronRight,
   TrendingUp,
   Flame,
-  Music,
   BarChart2,
 } from 'lucide-react';
 import { userProfileService } from '../lib/userProfile';
@@ -24,7 +23,6 @@ import { roadmapEngine, calculateFriction, predictEnergyState } from '../lib/roa
 import type { Roadmap, AIRecommendation, EnergyState } from '../lib/roadmapEngine';
 import { LIFE_DOMAINS } from '../lib/glyphSystem';
 import { NeuralMapView } from './NeuralMapView';
-import { StoryMusicPlayer } from './StoryMusicPlayer';
 import type { DeltaHVState } from '../lib/deltaHVEngine';
 
 interface UserProfilePageProps {
@@ -34,7 +32,7 @@ interface UserProfilePageProps {
   onSelectBeat?: (category: string) => void;
 }
 
-type ProfileTab = 'overview' | 'neural' | 'music' | 'goals' | 'habits' | 'preferences' | 'roadmap';
+type ProfileTab = 'overview' | 'neural' | 'goals' | 'habits' | 'preferences' | 'roadmap';
 
 const categoryIcons: Record<string, React.ReactNode> = {
   physical: <Zap className="w-4 h-4" />,
@@ -186,7 +184,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
 
         {/* Tab Navigation */}
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          {(['overview', 'neural', 'music', 'goals', 'habits', 'preferences', 'roadmap'] as ProfileTab[]).map(tab => (
+          {(['overview', 'neural', 'goals', 'habits', 'preferences', 'roadmap'] as ProfileTab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -227,29 +225,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
               Start tracking your daily beats to generate your personalized neural map based on
               DeltaHV metrics and Free Energy Principle analysis.
             </p>
-          </div>
-        )}
-
-        {activeTab === 'music' && (
-          <div className="space-y-6">
-            <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-xl p-5 mb-4">
-              <div className="flex items-center gap-3 mb-3">
-                <Music className="w-5 h-5 text-purple-400" />
-                <h3 className="text-lg font-medium text-white">Story Music</h3>
-              </div>
-              <p className="text-sm text-gray-400">
-                Your music choices shape your emotional journey. The Hilbert shuffle algorithm
-                responds to your DeltaHV metrics, guiding you through emotional space.
-                Skip freely - every choice is authorship of your story.
-              </p>
-            </div>
-            <StoryMusicPlayer
-              deltaHV={deltaHV || null}
-              onMetricsUpdate={(metrics) => {
-                // Story metrics can be used to update profile or analytics
-                console.log('Story metrics updated:', metrics);
-              }}
-            />
           </div>
         )}
 

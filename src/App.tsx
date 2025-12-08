@@ -1294,40 +1294,6 @@ export default function App() {
               Profile
             </button>
 
-            {/* Challenges Button */}
-            <button
-              onClick={() => setCurrentView('challenges')}
-              className="px-3 py-1.5 rounded-lg text-sm flex items-center gap-2"
-              style={{
-                background: 'var(--button-bg, rgba(249, 115, 22, 0.2))',
-                borderColor: 'var(--button-border, rgba(249, 115, 22, 0.5))',
-                color: 'var(--button-text, #fb923c)'
-              }}
-              title="Daily Challenges & Rewards"
-            >
-              <Target className="w-4 h-4" />
-              Challenges
-              {challengeRewardService.getStats().currentStreak > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 bg-orange-500/30 rounded-full text-xs">
-                  {challengeRewardService.getStats().currentStreak}
-                </span>
-              )}
-            </button>
-
-            {/* Cosmetics Button */}
-            <button
-              onClick={() => setCurrentView('cosmetics')}
-              className="px-3 py-1.5 rounded-lg text-sm flex items-center gap-2"
-              style={{
-                background: 'var(--accent-glow, rgba(168, 85, 247, 0.2))',
-                borderColor: 'var(--accent-secondary, rgba(168, 85, 247, 0.5))',
-                color: 'var(--accent-primary, #a855f7)'
-              }}
-              title="Cosmetics & Customization"
-            >
-              <Palette className="w-4 h-4" />
-              Cosmetics
-            </button>
           </div>
           <div className="text-sm text-gray-500 h-5">
             {saveStatus === 'saving' && 'Syncing...'}

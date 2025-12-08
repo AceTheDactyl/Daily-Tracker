@@ -41,6 +41,7 @@ import {
   ChevronRight,
   Calendar,
   Plus,
+  Palette,
 } from 'lucide-react';
 import type { DeltaHVState } from '../lib/deltaHVEngine';
 import { BRAIN_REGIONS, type BrainRegion, type BrainRegionCategory } from '../lib/glyphSystem';
@@ -128,10 +129,8 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
   onClose,
   onCompleteChallenge,
   onCreateBeat,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onNavigateToChallenges: _onNavigateToChallenges,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onNavigateToCosmetics: _onNavigateToCosmetics,
+  onNavigateToChallenges,
+  onNavigateToCosmetics,
 }) => {
   const [activeTab, setActiveTab] = useState<ViewTab>('challenges');
   const [selectedCategory, setSelectedCategory] = useState<BrainRegionCategory>('cortical');
@@ -361,8 +360,8 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="flex items-center gap-3">
+        {/* Stats & Navigation */}
+        <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/20 rounded-lg border border-orange-500/30">
             <Flame className="w-4 h-4 text-orange-400" />
             <span className="text-sm text-orange-300">{stats.currentStreak}</span>
@@ -371,6 +370,27 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
             <Sparkles className="w-4 h-4 text-purple-400" />
             <span className="text-sm text-purple-300">{stats.totalXP} XP</span>
           </div>
+          {/* Hub & Cosmetics Navigation */}
+          {onNavigateToChallenges && (
+            <button
+              onClick={onNavigateToChallenges}
+              className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-300 text-sm flex items-center gap-2 hover:bg-amber-500/30 transition-colors"
+              title="Challenge Hub"
+            >
+              <Target className="w-4 h-4" />
+              Hub
+            </button>
+          )}
+          {onNavigateToCosmetics && (
+            <button
+              onClick={onNavigateToCosmetics}
+              className="px-3 py-1.5 rounded-lg bg-pink-500/20 border border-pink-500/30 text-pink-300 text-sm flex items-center gap-2 hover:bg-pink-500/30 transition-colors"
+              title="Cosmetics Inventory"
+            >
+              <Palette className="w-4 h-4" />
+              Cosmetics
+            </button>
+          )}
         </div>
       </div>
 
