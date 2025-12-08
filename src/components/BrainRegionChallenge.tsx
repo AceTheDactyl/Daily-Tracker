@@ -39,7 +39,6 @@ import {
   TrendingUp,
   Gift,
   ChevronRight,
-  Palette,
   Calendar,
   Plus,
 } from 'lucide-react';
@@ -129,11 +128,13 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
   onClose,
   onCompleteChallenge,
   onCreateBeat,
-  onNavigateToChallenges,
-  onNavigateToCosmetics,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onNavigateToChallenges: _onNavigateToChallenges,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onNavigateToCosmetics: _onNavigateToCosmetics,
 }) => {
   const [activeTab, setActiveTab] = useState<ViewTab>('challenges');
-  const [selectedCategory, setSelectedCategory] = useState<BrainRegionCategory | 'all'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<BrainRegionCategory>('cortical');
   const [selectedChallenge, setSelectedChallenge] = useState<ActiveChallenge | null>(null);
   const [selectedBrainTask, setSelectedBrainTask] = useState<{ region: BrainRegion; task: typeof BRAIN_TASKS.cortical[0] } | null>(null);
   const [activeMiniGame, setActiveMiniGame] = useState<ActiveChallenge | null>(null);
@@ -176,7 +177,6 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
 
   // Get brain regions filtered by category
   const filteredRegions = useMemo(() => {
-    if (selectedCategory === 'all') return BRAIN_REGIONS.slice(0, 16); // Show first 16 for now
     return BRAIN_REGIONS.filter(r => r.category === selectedCategory).slice(0, 8);
   }, [selectedCategory]);
 
@@ -305,8 +305,7 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
     legendary: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
   };
 
-  const categories: Array<{ id: BrainRegionCategory | 'all'; label: string; icon: React.ReactNode; color: string }> = [
-    { id: 'all', label: 'All', icon: <Brain className="w-4 h-4" />, color: 'gray' },
+  const categories: Array<{ id: BrainRegionCategory; label: string; icon: React.ReactNode; color: string }> = [
     { id: 'cortical', label: 'Mind', icon: <Sparkles className="w-4 h-4" />, color: 'purple' },
     { id: 'limbic', label: 'Emotion', icon: <Heart className="w-4 h-4" />, color: 'pink' },
     { id: 'subcortical', label: 'Reward', icon: <Star className="w-4 h-4" />, color: 'amber' },
@@ -351,7 +350,7 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
           </div>
         </div>
 
-        {/* Stats & Navigation */}
+        {/* Stats */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/20 rounded-lg border border-orange-500/30">
             <Flame className="w-4 h-4 text-orange-400" />
@@ -361,36 +360,6 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
             <Sparkles className="w-4 h-4 text-purple-400" />
             <span className="text-sm text-purple-300">{stats.totalXP} XP</span>
           </div>
-
-          {/* Navigation to Challenges (Old Hub) */}
-          {onNavigateToChallenges && (
-            <button
-              onClick={() => {
-                onClose();
-                onNavigateToChallenges();
-              }}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 transition-colors"
-              title="View All Challenges"
-            >
-              <Target className="w-4 h-4" />
-              <span className="text-sm hidden sm:inline">Hub</span>
-            </button>
-          )}
-
-          {/* Navigation to Cosmetics */}
-          {onNavigateToCosmetics && (
-            <button
-              onClick={() => {
-                onClose();
-                onNavigateToCosmetics();
-              }}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-pink-500/20 border border-pink-500/30 text-pink-300 hover:bg-pink-500/30 transition-colors"
-              title="Cosmetics Inventory"
-            >
-              <Palette className="w-4 h-4" />
-              <span className="text-sm hidden sm:inline">Cosmetics</span>
-            </button>
-          )}
         </div>
       </div>
 

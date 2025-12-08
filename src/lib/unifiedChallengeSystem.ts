@@ -1052,19 +1052,18 @@ class UnifiedChallengeService {
     };
     const shuffled = [...available].sort(() => seededRandom() - 0.5);
 
-    // Select balanced mix: 2 easy, 2 medium, 1 hard, 1 mini-game, keep secrets hidden
-    const selected: UnifiedChallenge[] = [];
-    const typeCount = { easy: 0, medium: 0, hard: 0, mini_game: 0 };
+    // Always include ALL mini-games (they're always accessible)
+    const allMiniGames = available.filter(c => c.type === 'mini_game');
+    const nonMiniGames = shuffled.filter(c => c.type !== 'mini_game' && c.type !== 'secret');
 
-    for (const challenge of shuffled) {
-      if (selected.length >= 6) break;
+    // Select balanced mix of non-mini-game challenges: 2 easy, 2 medium, 1 hard
+    const selected: UnifiedChallenge[] = [...allMiniGames]; // Start with all mini-games
+    const typeCount = { easy: 0, medium: 0, hard: 0 };
 
-      if (challenge.type === 'secret') continue; // Handle secrets separately
+    for (const challenge of nonMiniGames) {
+      if (typeCount.easy >= 2 && typeCount.medium >= 2 && typeCount.hard >= 1) break;
 
-      if (challenge.type === 'mini_game' && typeCount.mini_game < 2) {
-        selected.push(challenge);
-        typeCount.mini_game++;
-      } else if (challenge.difficulty === 'easy' && typeCount.easy < 2) {
+      if (challenge.difficulty === 'easy' && typeCount.easy < 2) {
         selected.push(challenge);
         typeCount.easy++;
       } else if (challenge.difficulty === 'medium' && typeCount.medium < 2) {
