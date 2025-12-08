@@ -1,38 +1,38 @@
 /**
  * Focus & Wellness Tools Component
  *
- * An integrated tabbed section that combines:
- * - Frequency: 3-tier frequency modulator for binaural/meditation tones
- * - Glyph/Challenges: Brain region challenges with drawing canvas
- * - Metrics Overview: Real-time DeltaHV metrics display
+ * Integrated tabbed section with:
+ * - Frequency: Simple tone generator with presets
+ * - Glyph: Drawing canvas with daily challenges and gradient rewards
+ * - Metrics: DeltaHV metrics display
  */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  Disc3,
-  Brain,
   Activity,
   Volume2,
+  VolumeX,
   Music,
   Sparkles,
   Heart,
   Zap,
-  Sun,
   Moon,
   Target,
   Trophy,
   CheckCircle2,
-  Clock,
   ChevronDown,
   ChevronUp,
   Download,
   Trash2,
   Pencil,
+  Gift,
+  Calendar,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import type { DeltaHVState } from '../lib/deltaHVEngine';
 import type { EnhancedDeltaHVState } from '../lib/metricsHub';
 import { metricsHub } from '../lib/metricsHub';
-import { BRAIN_REGIONS, type BrainRegion, type BrainRegionCategory } from '../lib/glyphSystem';
 
 interface FocusWellnessToolsProps {
   deltaHV: DeltaHVState | null;
@@ -44,259 +44,297 @@ interface FocusWellnessToolsProps {
 
 type ActiveTab = 'metrics' | 'frequency' | 'glyph';
 
-// Frequency presets
+// Gradient definitions
+interface GradientDef {
+  id: string;
+  name: string;
+  colors: string[];
+  unlockDay: number; // 0 = default/always unlocked
+}
+
+const GRADIENTS: GradientDef[] = [
+  { id: 'viridis', name: 'Viridis', colors: ['#440154', '#31688e', '#35b779', '#fde725'], unlockDay: 0 },
+  { id: 'plasma', name: 'Plasma', colors: ['#0d0887', '#7e03a8', '#cc4778', '#f89540', '#f0f921'], unlockDay: 1 },
+  { id: 'inferno', name: 'Inferno', colors: ['#000004', '#420a68', '#932667', '#dd513a', '#fca50a', '#fcffa4'], unlockDay: 2 },
+  { id: 'magma', name: 'Magma', colors: ['#000004', '#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'], unlockDay: 3 },
+  { id: 'ocean', name: 'Ocean', colors: ['#023e8a', '#0077b6', '#0096c7', '#00b4d8', '#48cae4', '#90e0ef'], unlockDay: 5 },
+  { id: 'sunset', name: 'Sunset', colors: ['#ff6b6b', '#ee5a5a', '#f77f00', '#fcbf49', '#eae2b7'], unlockDay: 7 },
+  { id: 'aurora', name: 'Aurora', colors: ['#00ff87', '#60efff', '#0061ff', '#ff00c8', '#ff006e'], unlockDay: 10 },
+  { id: 'cosmic', name: 'Cosmic', colors: ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe'], unlockDay: 14 },
+];
+
+// Frequency presets - simplified
 interface FrequencyPreset {
   id: string;
   name: string;
   icon: React.ReactNode;
-  freqs: [number, number, number];
+  freq: number;
   description: string;
 }
 
 const FREQUENCY_PRESETS: FrequencyPreset[] = [
-  { id: 'focus', name: 'Focus', icon: <Target className="w-4 h-4" />, freqs: [40, 14, 0], description: 'Gamma + Beta for concentration' },
-  { id: 'calm', name: 'Calm', icon: <Moon className="w-4 h-4" />, freqs: [432, 528, 0], description: 'Solfeggio healing frequencies' },
-  { id: 'energy', name: 'Energy', icon: <Zap className="w-4 h-4" />, freqs: [285, 396, 417], description: 'Activation and transformation' },
-  { id: 'love', name: 'Love', icon: <Heart className="w-4 h-4" />, freqs: [528, 639, 741], description: 'Heart-centered frequencies' },
-  { id: 'sleep', name: 'Sleep', icon: <Sun className="w-4 h-4" />, freqs: [174, 285, 0], description: 'Deep relaxation tones' },
+  { id: 'focus', name: 'Focus', icon: <Target className="w-4 h-4" />, freq: 40, description: 'Gamma waves for concentration' },
+  { id: 'calm', name: 'Calm', icon: <Moon className="w-4 h-4" />, freq: 432, description: 'Natural harmonic frequency' },
+  { id: 'heal', name: 'Heal', icon: <Heart className="w-4 h-4" />, freq: 528, description: 'Solfeggio love frequency' },
+  { id: 'energy', name: 'Energy', icon: <Zap className="w-4 h-4" />, freq: 285, description: 'Cellular regeneration' },
 ];
 
-// Challenge interface
-interface Challenge {
-  id: string;
-  regionId: string;
-  title: string;
-  description: string;
-  xpReward: number;
-  difficulty: 'easy' | 'medium' | 'hard';
-  timeEstimate: string;
-  category: 'quick' | 'focus' | 'creative' | 'physical' | 'social' | 'reflective';
-  requiresDrawing?: boolean;
+// Storage keys
+const STORAGE_KEYS = {
+  GLYPHS: 'glyph-gallery',
+  XP: 'glyph-xp',
+  UNLOCKED_GRADIENTS: 'unlocked-gradients',
+  DAILY_STREAK: 'daily-glyph-streak',
+  LAST_DAILY: 'last-daily-glyph',
+};
+
+// Get color from gradient based on frequency (0-1000 Hz mapped to gradient)
+function getGradientColor(gradient: GradientDef, frequency: number): string {
+  if (frequency === 0) return '#ffffff';
+  const colors = gradient.colors;
+  const t = Math.min(frequency / 600, 1); // 0-600Hz maps to full gradient
+  const idx = t * (colors.length - 1);
+  const lower = Math.floor(idx);
+  const upper = Math.min(lower + 1, colors.length - 1);
+  const mix = idx - lower;
+
+  // Interpolate between colors
+  const c1 = hexToRgb(colors[lower]);
+  const c2 = hexToRgb(colors[upper]);
+  if (!c1 || !c2) return colors[lower];
+
+  const r = Math.round(c1.r + (c2.r - c1.r) * mix);
+  const g = Math.round(c1.g + (c2.g - c1.g) * mix);
+  const b = Math.round(c1.b + (c2.b - c1.b) * mix);
+
+  return `rgb(${r},${g},${b})`;
 }
 
-interface CompletedChallenge {
-  challengeId: string;
-  regionId: string;
-  completedAt: string;
-  xpEarned: number;
-  glyphData?: string;
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : null;
 }
 
-const CHALLENGE_STORAGE_KEY = 'brain-region-challenges-completed';
-const XP_STORAGE_KEY = 'brain-region-xp';
-const GLYPH_STORAGE_KEY = 'saved-glyphs';
-
-// Generate challenges with some requiring drawing
-function generateChallenges(regions: BrainRegion[]): Challenge[] {
-  const challenges: Challenge[] = [];
-  const templates: Record<BrainRegionCategory, { title: string; description: string; category: Challenge['category']; requiresDrawing?: boolean }[]> = {
-    cortical: [
-      { title: 'Deep Focus Session', description: 'Complete 25 minutes of uninterrupted focus work', category: 'focus' },
-      { title: 'Draw Your Intention', description: 'Draw a glyph representing your current goal', category: 'creative', requiresDrawing: true },
-    ],
-    limbic: [
-      { title: 'Gratitude Glyph', description: 'Draw a symbol of something you\'re grateful for', category: 'creative', requiresDrawing: true },
-      { title: 'Emotional Check-In', description: 'Sit quietly and identify your current emotions', category: 'reflective' },
-    ],
-    subcortical: [
-      { title: 'Movement Break', description: 'Do 10 minutes of physical activity', category: 'physical' },
-      { title: 'Reward Symbol', description: 'Draw a glyph celebrating a recent win', category: 'creative', requiresDrawing: true },
-    ],
-    brainstem: [
-      { title: 'Breathing Exercise', description: 'Complete 4-7-8 breathing for 5 minutes', category: 'quick' },
-      { title: 'Body Scan', description: 'Do a full body relaxation scan', category: 'physical' },
-    ],
-    cerebellar: [
-      { title: 'Balance Practice', description: 'Stand on one foot for 1 minute each side', category: 'physical' },
-      { title: 'Flow State Glyph', description: 'Draw while in a flow state', category: 'creative', requiresDrawing: true },
-    ],
-    sensory: [
-      { title: 'Mindful Listening', description: 'Close your eyes and focus on sounds', category: 'reflective' },
-      { title: 'Sensory Symbol', description: 'Draw what you feel right now', category: 'creative', requiresDrawing: true },
-    ],
-    motor: [
-      { title: 'Stretching Routine', description: 'Complete a 10-minute stretch sequence', category: 'physical' },
-      { title: 'Movement Glyph', description: 'Draw a symbol representing energy flow', category: 'creative', requiresDrawing: true },
-    ],
-    integration: [
-      { title: 'Mind-Body Sync', description: 'Do yoga or tai chi for 15 minutes', category: 'physical' },
-      { title: 'Integration Symbol', description: 'Draw a glyph connecting mind and body', category: 'creative', requiresDrawing: true },
-    ],
-  };
-
-  regions.slice(0, 16).forEach((region, idx) => {
-    const categoryTemplates = templates[region.category] || templates.cortical;
-    const template = categoryTemplates[idx % categoryTemplates.length];
-    challenges.push({
-      id: `challenge-${region.id}`,
-      regionId: region.id,
-      title: template.title,
-      description: template.description,
-      xpReward: template.requiresDrawing ? 35 : (region.category === 'cortical' ? 30 : region.category === 'limbic' ? 25 : 20),
-      difficulty: template.requiresDrawing ? 'medium' : (region.category === 'cortical' ? 'hard' : region.category === 'limbic' ? 'medium' : 'easy'),
-      timeEstimate: template.category === 'quick' ? '5 min' : template.category === 'focus' ? '25 min' : '10 min',
-      category: template.category,
-      requiresDrawing: template.requiresDrawing,
-    });
-  });
-
-  return challenges;
-}
+// Daily challenge prompts
+const DAILY_PROMPTS = [
+  'Draw your current mood',
+  'Sketch a symbol of peace',
+  'Create a pattern that flows',
+  'Draw what energy looks like',
+  'Illustrate your intention',
+  'Draw a protective symbol',
+  'Sketch your inner calm',
+];
 
 export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
   deltaHV,
   enhancedMetrics,
   onOpenFullDJ,
-  onOpenFullChallenges,
-  onCompleteChallenge,
 }) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('metrics');
   const [isExpanded, setIsExpanded] = useState(true);
 
-  // Frequency State
-  const [mixFreqs, setMixFreqs] = useState<[number, number, number]>([432, 0, 0]);
-  const [mixPlaying, setMixPlaying] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
-  const mixCtx = useRef<AudioContext | null>(null);
-  const mixOsc = useRef<(OscillatorNode | null)[]>([null, null, null]);
-  const mixGain = useRef<(GainNode | null)[]>([null, null, null]);
+  // Frequency State - simplified
+  const [frequency, setFrequency] = useState(432);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioCtx = useRef<AudioContext | null>(null);
+  const oscillator = useRef<OscillatorNode | null>(null);
+  const gainNode = useRef<GainNode | null>(null);
 
-  // Challenge State
-  const [completedChallenges, setCompletedChallenges] = useState<CompletedChallenge[]>([]);
-  const [totalXP, setTotalXP] = useState(0);
-  const [selectedChallengeCategory, setSelectedChallengeCategory] = useState<BrainRegionCategory | 'all'>('all');
-  const [activeChallenge, setActiveChallenge] = useState<Challenge | null>(null);
-
-  // Drawing State
+  // Glyph/Drawing State
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [showCanvas, setShowCanvas] = useState(false);
   const [savedGlyphs, setSavedGlyphs] = useState<string[]>([]);
+  const [totalXP, setTotalXP] = useState(0);
+  const [selectedGradient, setSelectedGradient] = useState<GradientDef>(GRADIENTS[0]);
+  const [unlockedGradients, setUnlockedGradients] = useState<string[]>(['viridis']);
+  const [dailyStreak, setDailyStreak] = useState(0);
+  const [dailyCompleted, setDailyCompleted] = useState(false);
+  const [showGradientPicker, setShowGradientPicker] = useState(false);
 
-  // Load challenge data
+  // Get today's daily prompt
+  const dailyPrompt = useMemo(() => {
+    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+    return DAILY_PROMPTS[dayOfYear % DAILY_PROMPTS.length];
+  }, []);
+
+  // Load saved data
   useEffect(() => {
     try {
-      const savedCompleted = localStorage.getItem(CHALLENGE_STORAGE_KEY);
-      if (savedCompleted) setCompletedChallenges(JSON.parse(savedCompleted));
-      const savedXP = localStorage.getItem(XP_STORAGE_KEY);
-      if (savedXP) setTotalXP(parseInt(savedXP));
-      const glyphs = localStorage.getItem(GLYPH_STORAGE_KEY);
+      const glyphs = localStorage.getItem(STORAGE_KEYS.GLYPHS);
       if (glyphs) setSavedGlyphs(JSON.parse(glyphs));
+
+      const xp = localStorage.getItem(STORAGE_KEYS.XP);
+      if (xp) setTotalXP(parseInt(xp));
+
+      const unlocked = localStorage.getItem(STORAGE_KEYS.UNLOCKED_GRADIENTS);
+      if (unlocked) setUnlockedGradients(JSON.parse(unlocked));
+
+      const streak = localStorage.getItem(STORAGE_KEYS.DAILY_STREAK);
+      if (streak) setDailyStreak(parseInt(streak));
+
+      const lastDaily = localStorage.getItem(STORAGE_KEYS.LAST_DAILY);
+      if (lastDaily) {
+        const today = new Date().toDateString();
+        const lastDate = new Date(lastDaily).toDateString();
+        setDailyCompleted(today === lastDate);
+
+        // Check if streak is broken (missed a day)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        if (lastDate !== today && lastDate !== yesterday.toDateString()) {
+          setDailyStreak(0);
+          localStorage.setItem(STORAGE_KEYS.DAILY_STREAK, '0');
+        }
+      }
     } catch (e) {
       console.error('Failed to load data:', e);
     }
   }, []);
 
-  // Initialize canvas
+  // Stop audio when switching tabs away from frequency
+  useEffect(() => {
+    if (activeTab !== 'frequency' && isPlaying) {
+      stopAudio();
+    }
+  }, [activeTab]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopAudio();
+    };
+  }, []);
+
+  // Initialize canvas with gradient stroke
   useEffect(() => {
     if (showCanvas && canvasRef.current) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-      ctx.strokeStyle = '#a78bfa';
-      ctx.lineWidth = 3;
+
+      // Set canvas size
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * window.devicePixelRatio;
+      canvas.height = rect.height * window.devicePixelRatio;
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+      // Set stroke style based on frequency and gradient
+      ctx.strokeStyle = getGradientColor(selectedGradient, frequency);
+      ctx.lineWidth = 4;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
     }
-  }, [showCanvas]);
+  }, [showCanvas, selectedGradient, frequency]);
 
-  // Generate challenges
-  const challenges = useMemo(() => generateChallenges(BRAIN_REGIONS), []);
-
-  // Filter challenges by category
-  const filteredChallenges = useMemo(() => {
-    if (selectedChallengeCategory === 'all') return challenges;
-    return challenges.filter(c => {
-      const region = BRAIN_REGIONS.find(r => r.id === c.regionId);
-      return region?.category === selectedChallengeCategory;
-    });
-  }, [challenges, selectedChallengeCategory]);
-
-  // Frequency controls
-  const handleFreqChange = useCallback((index: number, value: number) => {
-    setMixFreqs(prev => {
-      const next = [...prev] as [number, number, number];
-      next[index] = value;
-      return next;
-    });
-    if (mixPlaying && mixOsc.current[index] && mixCtx.current) {
-      mixOsc.current[index]!.frequency.setValueAtTime(value, mixCtx.current.currentTime);
+  // Update stroke color when frequency changes
+  useEffect(() => {
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      if (ctx) {
+        ctx.strokeStyle = getGradientColor(selectedGradient, frequency);
+      }
     }
-  }, [mixPlaying]);
+  }, [frequency, selectedGradient]);
+
+  // Audio controls
+  const startAudio = useCallback(() => {
+    if (!audioCtx.current) {
+      audioCtx.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    }
+
+    if (audioCtx.current.state === 'suspended') {
+      audioCtx.current.resume();
+    }
+
+    oscillator.current = audioCtx.current.createOscillator();
+    gainNode.current = audioCtx.current.createGain();
+
+    oscillator.current.type = 'sine';
+    oscillator.current.frequency.setValueAtTime(frequency, audioCtx.current.currentTime);
+
+    gainNode.current.gain.setValueAtTime(0, audioCtx.current.currentTime);
+    gainNode.current.gain.linearRampToValueAtTime(0.15, audioCtx.current.currentTime + 0.3);
+
+    oscillator.current.connect(gainNode.current);
+    gainNode.current.connect(audioCtx.current.destination);
+    oscillator.current.start();
+
+    setIsPlaying(true);
+  }, [frequency]);
+
+  const stopAudio = useCallback(() => {
+    if (gainNode.current && audioCtx.current) {
+      gainNode.current.gain.linearRampToValueAtTime(0, audioCtx.current.currentTime + 0.2);
+      setTimeout(() => {
+        try {
+          oscillator.current?.stop();
+        } catch {}
+        oscillator.current = null;
+        gainNode.current = null;
+      }, 250);
+    }
+    setIsPlaying(false);
+  }, []);
+
+  const toggleAudio = useCallback(() => {
+    if (isPlaying) {
+      stopAudio();
+    } else {
+      startAudio();
+    }
+  }, [isPlaying, startAudio, stopAudio]);
+
+  // Update frequency while playing
+  const handleFrequencyChange = useCallback((newFreq: number) => {
+    setFrequency(newFreq);
+    if (isPlaying && oscillator.current && audioCtx.current) {
+      oscillator.current.frequency.setValueAtTime(newFreq, audioCtx.current.currentTime);
+    }
+  }, [isPlaying]);
 
   const applyPreset = useCallback((preset: FrequencyPreset) => {
-    setSelectedPreset(preset.id);
-    setMixFreqs(preset.freqs);
-    if (mixPlaying) {
-      preset.freqs.forEach((freq, i) => {
-        if (mixOsc.current[i] && mixCtx.current) {
-          mixOsc.current[i]!.frequency.setValueAtTime(freq, mixCtx.current.currentTime);
-        }
-      });
-    }
-  }, [mixPlaying]);
-
-  const toggleFrequency = useCallback(() => {
-    if (!mixPlaying) {
-      if (!mixCtx.current) {
-        mixCtx.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-      for (let i = 0; i < 3; i++) {
-        if (mixFreqs[i] && mixFreqs[i] > 0) {
-          const osc = mixCtx.current.createOscillator();
-          const g = mixCtx.current.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(mixFreqs[i], mixCtx.current.currentTime);
-          g.gain.setValueAtTime(0.0, mixCtx.current.currentTime);
-          g.gain.linearRampToValueAtTime(0.12, mixCtx.current.currentTime + 0.4);
-          osc.connect(g);
-          g.connect(mixCtx.current.destination);
-          osc.start();
-          mixOsc.current[i] = osc;
-          mixGain.current[i] = g;
-        }
-      }
-      setMixPlaying(true);
-    } else {
-      for (let i = 0; i < 3; i++) {
-        try {
-          mixOsc.current[i]?.stop();
-        } catch {}
-        mixOsc.current[i] = null;
-        mixGain.current[i] = null;
-      }
-      setMixPlaying(false);
-    }
-  }, [mixPlaying, mixFreqs]);
+    handleFrequencyChange(preset.freq);
+  }, [handleFrequencyChange]);
 
   // Drawing functions
+  const getCanvasCoords = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+    return { x, y };
+  }, []);
+
   const startDrawing = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
     setIsDrawing(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+    const { x, y } = getCanvasCoords(e);
     ctx.beginPath();
     ctx.moveTo(x, y);
-  }, []);
+  }, [getCanvasCoords]);
 
   const draw = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
+    e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+    const { x, y } = getCanvasCoords(e);
     ctx.lineTo(x, y);
     ctx.stroke();
-  }, [isDrawing]);
+  }, [isDrawing, getCanvasCoords]);
 
   const stopDrawing = useCallback(() => setIsDrawing(false), []);
 
@@ -308,17 +346,51 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }, []);
 
-  const saveGlyph = useCallback(() => {
+  const saveGlyph = useCallback((isDaily = false) => {
     const canvas = canvasRef.current;
-    if (!canvas) return null;
+    if (!canvas) return;
+
     const dataUrl = canvas.toDataURL('image/png');
+
+    // Save to gallery
     setSavedGlyphs(prev => {
-      const updated = [...prev, dataUrl];
-      localStorage.setItem(GLYPH_STORAGE_KEY, JSON.stringify(updated.slice(-10))); // Keep last 10
-      return updated.slice(-10);
+      const updated = [dataUrl, ...prev].slice(0, 20);
+      localStorage.setItem(STORAGE_KEYS.GLYPHS, JSON.stringify(updated));
+      return updated;
     });
-    return dataUrl;
-  }, []);
+
+    // Award XP
+    const xpEarned = isDaily ? 50 : 25;
+    setTotalXP(prev => {
+      const updated = prev + xpEarned;
+      localStorage.setItem(STORAGE_KEYS.XP, updated.toString());
+      return updated;
+    });
+
+    // Handle daily completion
+    if (isDaily && !dailyCompleted) {
+      const newStreak = dailyStreak + 1;
+      setDailyStreak(newStreak);
+      setDailyCompleted(true);
+      localStorage.setItem(STORAGE_KEYS.DAILY_STREAK, newStreak.toString());
+      localStorage.setItem(STORAGE_KEYS.LAST_DAILY, new Date().toISOString());
+
+      // Check for gradient unlocks
+      const newUnlocks = GRADIENTS.filter(g =>
+        g.unlockDay <= newStreak && !unlockedGradients.includes(g.id)
+      ).map(g => g.id);
+
+      if (newUnlocks.length > 0) {
+        const allUnlocked = [...unlockedGradients, ...newUnlocks];
+        setUnlockedGradients(allUnlocked);
+        localStorage.setItem(STORAGE_KEYS.UNLOCKED_GRADIENTS, JSON.stringify(allUnlocked));
+      }
+    }
+
+    metricsHub.recordAction('glyph_saved');
+    clearCanvas();
+    setShowCanvas(false);
+  }, [dailyCompleted, dailyStreak, unlockedGradients, clearCanvas]);
 
   const downloadGlyph = useCallback(() => {
     const canvas = canvasRef.current;
@@ -332,66 +404,17 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
     document.body.removeChild(link);
   }, []);
 
-  // Complete challenge (with optional glyph)
-  const handleCompleteChallenge = useCallback((challenge: Challenge, glyphData?: string) => {
-    const completed: CompletedChallenge = {
-      challengeId: challenge.id,
-      regionId: challenge.regionId,
-      completedAt: new Date().toISOString(),
-      xpEarned: challenge.xpReward,
-      glyphData,
-    };
-
-    setCompletedChallenges(prev => {
-      const updated = [...prev, completed];
-      localStorage.setItem(CHALLENGE_STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
-
-    setTotalXP(prev => {
-      const updated = prev + challenge.xpReward;
-      localStorage.setItem(XP_STORAGE_KEY, updated.toString());
-      return updated;
-    });
-
-    onCompleteChallenge?.(challenge.regionId, challenge.xpReward);
-    metricsHub.recordAction(`challenge_complete_${challenge.regionId}`);
-    setActiveChallenge(null);
-    setShowCanvas(false);
-    clearCanvas();
-  }, [onCompleteChallenge, clearCanvas]);
-
-  // Check if challenge is completed today
-  const isChallengeCompletedToday = useCallback((challengeId: string) => {
-    const today = new Date().toDateString();
-    return completedChallenges.some(
-      c => c.challengeId === challengeId && new Date(c.completedAt).toDateString() === today
-    );
-  }, [completedChallenges]);
-
-  // Start a drawing challenge
-  const startDrawingChallenge = useCallback((challenge: Challenge) => {
-    setActiveChallenge(challenge);
-    setShowCanvas(true);
-  }, []);
-
-  // Submit drawing for challenge
-  const submitDrawingChallenge = useCallback(() => {
-    if (!activeChallenge) return;
-    const glyphData = saveGlyph();
-    handleCompleteChallenge(activeChallenge, glyphData || undefined);
-  }, [activeChallenge, saveGlyph, handleCompleteChallenge]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      for (let i = 0; i < 3; i++) {
-        try {
-          mixOsc.current[i]?.stop();
-        } catch {}
-      }
-    };
-  }, []);
+  // Gradient preview
+  const renderGradientPreview = (gradient: GradientDef, size = 24) => (
+    <div
+      className="rounded"
+      style={{
+        width: size,
+        height: size,
+        background: `linear-gradient(135deg, ${gradient.colors.join(', ')})`,
+      }}
+    />
+  );
 
   return (
     <div className="bg-gray-950/60 backdrop-blur border border-gray-800 rounded-2xl overflow-hidden">
@@ -400,7 +423,7 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-medium text-white flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-purple-400" />
-            Focus & Wellness Tools
+            Focus & Wellness
           </h2>
           <button
             onClick={() => setIsExpanded(!isExpanded)}
@@ -414,41 +437,39 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
         <div className="flex gap-2">
           <button
             onClick={() => setActiveTab('metrics')}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
               activeTab === 'metrics'
                 ? 'bg-gradient-to-r from-cyan-600/30 to-purple-600/30 border border-cyan-500/30 text-white'
                 : 'bg-gray-900/50 border border-gray-800 text-gray-400 hover:text-white hover:border-gray-700'
             }`}
           >
             <Activity className="w-4 h-4" />
-            <span>Metrics</span>
+            <span className="hidden sm:inline">Metrics</span>
           </button>
           <button
             onClick={() => setActiveTab('frequency')}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
               activeTab === 'frequency'
                 ? 'bg-gradient-to-r from-violet-600/30 to-pink-600/30 border border-violet-500/30 text-white'
                 : 'bg-gray-900/50 border border-gray-800 text-gray-400 hover:text-white hover:border-gray-700'
             }`}
           >
-            <Volume2 className={`w-4 h-4 ${mixPlaying ? 'text-violet-400' : ''}`} />
-            <span>Frequency</span>
-            {mixPlaying && <span className="w-2 h-2 bg-violet-400 rounded-full animate-pulse" />}
+            {isPlaying ? <Volume2 className="w-4 h-4 text-violet-400" /> : <VolumeX className="w-4 h-4" />}
+            <span className="hidden sm:inline">Tones</span>
+            {isPlaying && <span className="w-2 h-2 bg-violet-400 rounded-full animate-pulse" />}
           </button>
           <button
             onClick={() => setActiveTab('glyph')}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
               activeTab === 'glyph'
                 ? 'bg-gradient-to-r from-amber-600/30 to-orange-600/30 border border-amber-500/30 text-white'
                 : 'bg-gray-900/50 border border-gray-800 text-gray-400 hover:text-white hover:border-gray-700'
             }`}
           >
-            <Brain className="w-4 h-4" />
-            <span>Glyph</span>
-            {totalXP > 0 && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-300">
-                {totalXP}XP
-              </span>
+            <Pencil className="w-4 h-4" />
+            <span className="hidden sm:inline">Draw</span>
+            {!dailyCompleted && (
+              <span className="w-2 h-2 bg-amber-400 rounded-full" title="Daily available" />
             )}
           </button>
         </div>
@@ -474,7 +495,7 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                         <Activity className="w-6 h-6" />
                       </div>
                       <div>
-                        <p className="text-lg font-medium text-white">ΔHV Field State</p>
+                        <p className="text-lg font-medium text-white">ΔHV Field</p>
                         <p className="text-sm text-gray-400 capitalize">{deltaHV.fieldState}</p>
                       </div>
                     </div>
@@ -485,53 +506,49 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                         deltaHV.deltaHV >= 25 ? 'text-orange-400' :
                         'text-gray-400'
                       }`}>{deltaHV.deltaHV}</p>
-                      <p className="text-xs text-gray-500">ΔHV Score</p>
+                      <p className="text-xs text-gray-500">Score</p>
                     </div>
                   </div>
 
-                  {/* Four Core Metrics */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {/* Core Metrics Grid */}
+                  <div className="grid grid-cols-2 gap-3">
                     <div className="bg-gray-900/60 rounded-xl p-3 border border-violet-800/30">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-lg">✨</span>
-                        <span className="text-xl font-bold text-violet-400">{deltaHV.symbolicDensity}%</span>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-violet-300">Symbolic</span>
+                        <span className="text-lg font-bold text-violet-400">{deltaHV.symbolicDensity}%</span>
                       </div>
-                      <p className="text-xs text-violet-300">Symbolic (S)</p>
-                      <div className="h-1.5 bg-gray-800 rounded-full mt-2 overflow-hidden">
-                        <div className="h-full bg-violet-500 rounded-full" style={{ width: `${deltaHV.symbolicDensity}%` }} />
+                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${deltaHV.symbolicDensity}%` }} />
                       </div>
                     </div>
 
                     <div className="bg-gray-900/60 rounded-xl p-3 border border-cyan-800/30">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-lg">🎯</span>
-                        <span className="text-xl font-bold text-cyan-400">{deltaHV.resonanceCoupling}%</span>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-cyan-300">Resonance</span>
+                        <span className="text-lg font-bold text-cyan-400">{deltaHV.resonanceCoupling}%</span>
                       </div>
-                      <p className="text-xs text-cyan-300">Resonance (R)</p>
-                      <div className="h-1.5 bg-gray-800 rounded-full mt-2 overflow-hidden">
-                        <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${deltaHV.resonanceCoupling}%` }} />
+                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-cyan-500 rounded-full transition-all" style={{ width: `${deltaHV.resonanceCoupling}%` }} />
                       </div>
                     </div>
 
                     <div className="bg-gray-900/60 rounded-xl p-3 border border-orange-800/30">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-lg">🌧️</span>
-                        <span className="text-xl font-bold text-orange-400">{deltaHV.frictionCoefficient}%</span>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-orange-300">Friction</span>
+                        <span className="text-lg font-bold text-orange-400">{deltaHV.frictionCoefficient}%</span>
                       </div>
-                      <p className="text-xs text-orange-300">Friction (δφ)</p>
-                      <div className="h-1.5 bg-gray-800 rounded-full mt-2 overflow-hidden">
-                        <div className="h-full bg-orange-500 rounded-full" style={{ width: `${deltaHV.frictionCoefficient}%` }} />
+                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${deltaHV.frictionCoefficient}%` }} />
                       </div>
                     </div>
 
                     <div className="bg-gray-900/60 rounded-xl p-3 border border-emerald-800/30">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-lg">⚖️</span>
-                        <span className="text-xl font-bold text-emerald-400">{deltaHV.harmonicStability}%</span>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-emerald-300">Stability</span>
+                        <span className="text-lg font-bold text-emerald-400">{deltaHV.harmonicStability}%</span>
                       </div>
-                      <p className="text-xs text-emerald-300">Stability (H)</p>
-                      <div className="h-1.5 bg-gray-800 rounded-full mt-2 overflow-hidden">
-                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${deltaHV.harmonicStability}%` }} />
+                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${deltaHV.harmonicStability}%` }} />
                       </div>
                     </div>
                   </div>
@@ -542,156 +559,138 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Music className="w-4 h-4 text-purple-400" />
-                          <span className="text-sm text-purple-300">Music Influence</span>
+                          <span className="text-sm text-purple-300">Music</span>
                         </div>
-                        <div className="flex items-center gap-4 text-xs">
-                          <span className="text-gray-400">
-                            Authorship: <span className="text-purple-400">{enhancedMetrics.musicInfluence.authorshipScore}%</span>
-                          </span>
-                          <span className={`capitalize ${
-                            enhancedMetrics.musicInfluence.emotionalTrajectory === 'rising' ? 'text-green-400' :
-                            enhancedMetrics.musicInfluence.emotionalTrajectory === 'processing' ? 'text-yellow-400' :
-                            'text-gray-400'
-                          }`}>
-                            {enhancedMetrics.musicInfluence.emotionalTrajectory}
-                          </span>
-                        </div>
+                        <span className="text-sm text-purple-400">{enhancedMetrics.musicInfluence.authorshipScore}%</span>
                       </div>
                     </div>
                   )}
-
-                  {/* Field State Interpretation */}
-                  <div className={`rounded-xl p-3 border ${
-                    deltaHV.fieldState === 'coherent' ? 'bg-emerald-950/30 border-emerald-800/30' :
-                    deltaHV.fieldState === 'transitioning' ? 'bg-amber-950/30 border-amber-800/30' :
-                    deltaHV.fieldState === 'fragmented' ? 'bg-orange-950/30 border-orange-800/30' :
-                    'bg-gray-900/40 border-gray-800'
-                  }`}>
-                    <p className="text-sm">
-                      {deltaHV.fieldState === 'coherent' && <span className="text-emerald-300">🌟 Your field is highly coherent. Maintain momentum.</span>}
-                      {deltaHV.fieldState === 'transitioning' && <span className="text-amber-300">🔄 Transitioning between states. Stay consistent.</span>}
-                      {deltaHV.fieldState === 'fragmented' && <span className="text-orange-300">⚡ Some fragmentation detected. Focus on grounding.</span>}
-                      {deltaHV.fieldState === 'dormant' && <span className="text-gray-300">💤 Field is dormant. Start with small symbolic actions.</span>}
-                    </p>
-                  </div>
                 </>
               )}
 
               {!deltaHV && (
                 <div className="text-center py-8 text-gray-500">
                   <Activity className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                  <p>Complete your rhythm setup to see metrics</p>
+                  <p>Complete rhythm setup to see metrics</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* Frequency Tab */}
+          {/* Frequency Tab - Simplified */}
           {activeTab === 'frequency' && (
             <div className="space-y-4">
-              {/* Presets */}
-              <div>
-                <p className="text-sm text-gray-400 mb-2">Quick Presets</p>
-                <div className="grid grid-cols-5 gap-2">
-                  {FREQUENCY_PRESETS.map(preset => (
-                    <button
-                      key={preset.id}
-                      onClick={() => applyPreset(preset)}
-                      className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${
-                        selectedPreset === preset.id
-                          ? 'bg-violet-600/30 border-2 border-violet-400'
-                          : 'bg-gray-900/50 border border-gray-800 hover:border-gray-700'
-                      }`}
-                    >
-                      <span className={selectedPreset === preset.id ? 'text-violet-300' : 'text-gray-400'}>
-                        {preset.icon}
-                      </span>
-                      <span className={`text-xs ${selectedPreset === preset.id ? 'text-violet-300' : 'text-gray-400'}`}>
-                        {preset.name}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                {selectedPreset && (
-                  <p className="text-xs text-gray-500 mt-2 text-center">
-                    {FREQUENCY_PRESETS.find(p => p.id === selectedPreset)?.description}
-                  </p>
-                )}
+              {/* Current Frequency Display */}
+              <div className="text-center py-4">
+                <p className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-pink-400">
+                  {frequency} <span className="text-2xl">Hz</span>
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {frequency === 0 ? 'Silent' :
+                   frequency < 20 ? 'Sub-bass' :
+                   frequency < 60 ? 'Bass' :
+                   frequency < 250 ? 'Low-mid' :
+                   frequency < 500 ? 'Mid' :
+                   frequency < 800 ? 'High-mid' : 'High'}
+                </p>
               </div>
 
-              {/* 3-Tier Frequency Sliders */}
-              <div className="p-4 bg-gray-900/50 rounded-xl border border-gray-800 space-y-4">
-                <p className="text-sm text-gray-400 flex items-center gap-2">
-                  <Volume2 className="w-4 h-4 text-violet-400" />
-                  3-Tier Frequency Modulator
-                </p>
-                {[0, 1, 2].map(i => (
-                  <div key={i} className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-gray-400">
-                      <span>Layer {i + 1}</span>
-                      <span className={mixFreqs[i] > 0 ? 'text-violet-300' : 'text-gray-600'}>
-                        {mixFreqs[i] > 0 ? `${mixFreqs[i]} Hz` : 'off'}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1000}
-                      step={1}
-                      value={mixFreqs[i]}
-                      onChange={(e) => handleFreqChange(i, parseInt(e.target.value || '0'))}
-                      className="w-full accent-violet-500"
-                    />
-                  </div>
+              {/* Presets */}
+              <div className="grid grid-cols-4 gap-2">
+                {FREQUENCY_PRESETS.map(preset => (
+                  <button
+                    key={preset.id}
+                    onClick={() => applyPreset(preset)}
+                    className={`p-3 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                      frequency === preset.freq
+                        ? 'bg-violet-600/30 border-2 border-violet-400'
+                        : 'bg-gray-900/50 border border-gray-800 hover:border-violet-500/50'
+                    }`}
+                  >
+                    <span className={frequency === preset.freq ? 'text-violet-300' : 'text-gray-400'}>
+                      {preset.icon}
+                    </span>
+                    <span className={`text-xs ${frequency === preset.freq ? 'text-violet-300' : 'text-gray-400'}`}>
+                      {preset.name}
+                    </span>
+                  </button>
                 ))}
+              </div>
+
+              {/* Frequency Slider */}
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min={0}
+                  max={1000}
+                  value={frequency}
+                  onChange={(e) => handleFrequencyChange(parseInt(e.target.value))}
+                  className="w-full h-3 bg-gray-800 rounded-full appearance-none cursor-pointer accent-violet-500"
+                  style={{
+                    background: `linear-gradient(to right, ${selectedGradient.colors.join(', ')})`
+                  }}
+                />
+                <div className="flex justify-between text-xs text-gray-600">
+                  <span>0</span>
+                  <span>250</span>
+                  <span>500</span>
+                  <span>750</span>
+                  <span>1000</span>
+                </div>
               </div>
 
               {/* Play/Stop Button */}
               <button
-                onClick={toggleFrequency}
-                className={`w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors ${
-                  mixPlaying
+                onClick={toggleAudio}
+                className={`w-full py-4 rounded-xl font-medium flex items-center justify-center gap-3 transition-all ${
+                  isPlaying
                     ? 'bg-rose-600 hover:bg-rose-500 text-white'
                     : 'bg-violet-600 hover:bg-violet-500 text-white'
                 }`}
               >
-                {mixPlaying ? (
+                {isPlaying ? (
                   <>
-                    <span className="w-3 h-3 bg-white rounded-sm" />
-                    Stop Frequencies
+                    <VolumeX className="w-5 h-5" />
+                    Stop Tone
                   </>
                 ) : (
                   <>
                     <Volume2 className="w-5 h-5" />
-                    Play Frequencies
+                    Play Tone
                   </>
                 )}
               </button>
 
-              {/* Open Full DJ Button */}
+              {/* Full DJ Mode */}
               {onOpenFullDJ && (
                 <button
                   onClick={onOpenFullDJ}
-                  className="w-full py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                  className="w-full py-2 rounded-xl bg-gray-900/50 hover:bg-gray-800/50 text-gray-400 text-sm font-medium transition-colors border border-gray-800"
                 >
-                  <Disc3 className="w-4 h-4" />
-                  Open Full DJ Mode
+                  Open Full Music Mixer
                 </button>
               )}
             </div>
           )}
 
-          {/* Glyph/Challenges Tab */}
+          {/* Glyph/Drawing Tab */}
           {activeTab === 'glyph' && (
             <div className="space-y-4">
-              {/* Drawing Canvas (when active challenge requires it) */}
-              {showCanvas && (
+              {/* Canvas Mode */}
+              {showCanvas ? (
                 <div className="space-y-3">
+                  {/* Canvas Header */}
                   <div className="flex items-center justify-between">
-                    <p className="text-sm text-amber-300 flex items-center gap-2">
-                      <Pencil className="w-4 h-4" />
-                      {activeChallenge?.title || 'Draw Your Glyph'}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setShowGradientPicker(!showGradientPicker)}
+                        className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors"
+                        title="Select gradient"
+                      >
+                        {renderGradientPreview(selectedGradient, 20)}
+                      </button>
+                      <span className="text-sm text-gray-400">{selectedGradient.name}</span>
+                    </div>
                     <div className="flex gap-2">
                       <button
                         onClick={clearCanvas}
@@ -709,9 +708,63 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                       </button>
                     </div>
                   </div>
+
+                  {/* Gradient Picker */}
+                  {showGradientPicker && (
+                    <div className="p-3 bg-gray-900/80 rounded-xl border border-gray-700 space-y-2">
+                      <p className="text-xs text-gray-500 uppercase tracking-wider">Select Gradient</p>
+                      <div className="grid grid-cols-4 gap-2">
+                        {GRADIENTS.map(gradient => {
+                          const isUnlocked = unlockedGradients.includes(gradient.id);
+                          return (
+                            <button
+                              key={gradient.id}
+                              onClick={() => isUnlocked && setSelectedGradient(gradient)}
+                              disabled={!isUnlocked}
+                              className={`p-2 rounded-lg flex flex-col items-center gap-1 transition-all ${
+                                selectedGradient.id === gradient.id
+                                  ? 'bg-violet-600/30 border-2 border-violet-400'
+                                  : isUnlocked
+                                    ? 'bg-gray-800 hover:bg-gray-700 border border-gray-700'
+                                    : 'bg-gray-900/50 border border-gray-800 opacity-50'
+                              }`}
+                            >
+                              {renderGradientPreview(gradient, 28)}
+                              <span className="text-xs text-gray-400 flex items-center gap-1">
+                                {!isUnlocked && <Lock className="w-3 h-3" />}
+                                {gradient.name}
+                              </span>
+                              {!isUnlocked && (
+                                <span className="text-xs text-gray-600">Day {gradient.unlockDay}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Frequency affects stroke color hint */}
+                  <div className="flex items-center gap-2 px-3 py-2 bg-gray-900/50 rounded-lg">
+                    <div
+                      className="w-4 h-4 rounded-full border border-gray-600"
+                      style={{ backgroundColor: getGradientColor(selectedGradient, frequency) }}
+                    />
+                    <span className="text-xs text-gray-500">
+                      Stroke color: {frequency === 0 ? 'White' : `${frequency} Hz`}
+                    </span>
+                    <span className="text-xs text-gray-600 ml-auto">Adjust in Tones tab</span>
+                  </div>
+
+                  {/* Large Canvas */}
                   <canvas
                     ref={canvasRef}
-                    className="w-full h-48 bg-gray-900 rounded-xl border border-amber-500/30 touch-none cursor-crosshair"
+                    className="w-full rounded-xl border-2 touch-none cursor-crosshair"
+                    style={{
+                      height: '280px',
+                      backgroundColor: '#0a0a0a',
+                      borderColor: getGradientColor(selectedGradient, frequency),
+                    }}
                     onMouseDown={startDrawing}
                     onMouseMove={draw}
                     onMouseUp={stopDrawing}
@@ -720,181 +773,128 @@ export const FocusWellnessTools: React.FC<FocusWellnessToolsProps> = ({
                     onTouchMove={draw}
                     onTouchEnd={stopDrawing}
                   />
-                  {activeChallenge && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => { setShowCanvas(false); setActiveChallenge(null); clearCanvas(); }}
-                        className="flex-1 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={submitDrawingChallenge}
-                        className="flex-1 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-black text-sm font-medium transition-colors"
-                      >
-                        Complete Challenge (+{activeChallenge.xpReward}XP)
-                      </button>
-                    </div>
-                  )}
-                  {!activeChallenge && (
-                    <button
-                      onClick={() => { saveGlyph(); clearCanvas(); }}
-                      className="w-full py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
-                    >
-                      Save Glyph
-                    </button>
-                  )}
-                </div>
-              )}
 
-              {/* XP Display */}
-              {!showCanvas && (
+                  {/* Action Buttons */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { clearCanvas(); setShowCanvas(false); }}
+                      className="flex-1 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => saveGlyph(false)}
+                      className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
+                    >
+                      Save Glyph (+25 XP)
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* List Mode */
                 <>
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-amber-900/30 to-orange-900/30 border border-amber-500/20">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-amber-600/30 flex items-center justify-center">
-                        <Trophy className="w-6 h-6 text-amber-400" />
-                      </div>
-                      <div>
-                        <p className="text-lg font-medium text-white">Brain Training</p>
-                        <p className="text-sm text-gray-400">Draw glyphs & complete challenges</p>
-                      </div>
+                  {/* Stats Bar */}
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-900/50 border border-gray-800">
+                    <div className="flex items-center gap-2">
+                      <Trophy className="w-5 h-5 text-amber-400" />
+                      <span className="text-lg font-bold text-amber-400">{totalXP} XP</span>
                     </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-amber-400">{totalXP} XP</p>
-                      <p className="text-xs text-gray-500">Total Earned</p>
+                    <div className="h-6 w-px bg-gray-700" />
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-violet-400" />
+                      <span className="text-sm text-violet-300">{dailyStreak} day streak</span>
+                    </div>
+                    <div className="h-6 w-px bg-gray-700" />
+                    <div className="flex items-center gap-2">
+                      <Unlock className="w-4 h-4 text-emerald-400" />
+                      <span className="text-sm text-emerald-300">{unlockedGradients.length}/{GRADIENTS.length}</span>
+                    </div>
+                  </div>
+
+                  {/* Daily Challenge */}
+                  <div className={`p-4 rounded-xl border-2 transition-all ${
+                    dailyCompleted
+                      ? 'bg-emerald-950/30 border-emerald-600/40'
+                      : 'bg-gradient-to-r from-amber-900/30 to-orange-900/30 border-amber-500/40'
+                  }`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                        dailyCompleted ? 'bg-emerald-600/30' : 'bg-amber-600/30'
+                      }`}>
+                        {dailyCompleted ? (
+                          <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                        ) : (
+                          <Gift className="w-6 h-6 text-amber-400" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className={`font-medium ${dailyCompleted ? 'text-emerald-300' : 'text-white'}`}>
+                            Daily Glyph Challenge
+                          </p>
+                          <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">+50 XP</span>
+                        </div>
+                        <p className="text-sm text-gray-400 mt-1">{dailyPrompt}</p>
+                        {!dailyCompleted && (
+                          <button
+                            onClick={() => setShowCanvas(true)}
+                            className="mt-3 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-black text-sm font-medium transition-colors"
+                          >
+                            Start Daily Challenge
+                          </button>
+                        )}
+                        {dailyCompleted && (
+                          <p className="text-xs text-emerald-400 mt-2">Completed! Come back tomorrow.</p>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   {/* Quick Draw Button */}
                   <button
                     onClick={() => setShowCanvas(true)}
-                    className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600/30 to-amber-600/30 border border-violet-500/30 hover:border-violet-400/50 text-white font-medium flex items-center justify-center gap-2 transition-colors"
+                    className="w-full py-3 rounded-xl bg-gray-900/50 border border-gray-800 hover:border-violet-500/50 text-white font-medium flex items-center justify-center gap-2 transition-colors"
                   >
                     <Pencil className="w-5 h-5 text-violet-400" />
-                    Open Drawing Canvas
+                    Free Draw (+25 XP)
                   </button>
 
-                  {/* Saved Glyphs Gallery */}
-                  {savedGlyphs.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs text-gray-500 uppercase tracking-wider">Recent Glyphs</p>
-                      <div className="flex gap-2 overflow-x-auto pb-2">
-                        {savedGlyphs.slice(0, 5).map((glyph, idx) => (
-                          <img
-                            key={idx}
-                            src={glyph}
-                            alt={`Glyph ${idx + 1}`}
-                            className="w-16 h-16 rounded-lg border border-gray-700 bg-gray-900 object-cover flex-shrink-0"
-                          />
-                        ))}
+                  {/* Next Gradient Unlock */}
+                  {unlockedGradients.length < GRADIENTS.length && (
+                    <div className="p-3 rounded-xl bg-gray-900/50 border border-gray-800">
+                      <div className="flex items-center gap-3">
+                        <Lock className="w-4 h-4 text-gray-500" />
+                        <div className="flex-1">
+                          <p className="text-sm text-gray-400">Next unlock:</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            {renderGradientPreview(GRADIENTS.find(g => !unlockedGradients.includes(g.id))!, 20)}
+                            <span className="text-sm text-gray-300">
+                              {GRADIENTS.find(g => !unlockedGradients.includes(g.id))?.name}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              ({(GRADIENTS.find(g => !unlockedGradients.includes(g.id))?.unlockDay || 0) - dailyStreak} days)
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  {/* Category Filter */}
-                  <div className="flex gap-2 overflow-x-auto pb-2">
-                    <button
-                      onClick={() => setSelectedChallengeCategory('all')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-                        selectedChallengeCategory === 'all'
-                          ? 'bg-amber-600/30 text-amber-300 border border-amber-500/30'
-                          : 'bg-gray-900/50 text-gray-400 border border-gray-800 hover:border-gray-700'
-                      }`}
-                    >
-                      All
-                    </button>
-                    {(['cortical', 'limbic', 'subcortical', 'brainstem'] as BrainRegionCategory[]).map(cat => (
-                      <button
-                        key={cat}
-                        onClick={() => setSelectedChallengeCategory(cat)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap capitalize transition-all ${
-                          selectedChallengeCategory === cat
-                            ? 'bg-amber-600/30 text-amber-300 border border-amber-500/30'
-                            : 'bg-gray-900/50 text-gray-400 border border-gray-800 hover:border-gray-700'
-                        }`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Challenges List */}
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {filteredChallenges.slice(0, 6).map(challenge => {
-                      const isCompleted = isChallengeCompletedToday(challenge.id);
-                      const region = BRAIN_REGIONS.find(r => r.id === challenge.regionId);
-
-                      return (
-                        <div
-                          key={challenge.id}
-                          className={`p-3 rounded-xl border transition-all ${
-                            isCompleted
-                              ? 'bg-emerald-950/30 border-emerald-700/30'
-                              : 'bg-gray-900/50 border-gray-800 hover:border-gray-700'
-                          }`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${
-                              isCompleted ? 'bg-emerald-600/30' : 'bg-gray-800'
-                            }`}>
-                              {challenge.requiresDrawing ? '🌀' : (region?.glyph || '🧠')}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className={`text-sm font-medium ${isCompleted ? 'text-emerald-300' : 'text-white'}`}>
-                                  {challenge.title}
-                                </p>
-                                {challenge.requiresDrawing && (
-                                  <Pencil className="w-3 h-3 text-violet-400" />
-                                )}
-                                <span className={`text-xs px-1.5 py-0.5 rounded ${
-                                  challenge.difficulty === 'hard' ? 'bg-rose-500/20 text-rose-300' :
-                                  challenge.difficulty === 'medium' ? 'bg-amber-500/20 text-amber-300' :
-                                  'bg-emerald-500/20 text-emerald-300'
-                                }`}>
-                                  {challenge.xpReward}XP
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-400 mt-0.5">{challenge.description}</p>
-                              <div className="flex items-center gap-2 mt-1.5">
-                                <span className="text-xs text-gray-500 flex items-center gap-1">
-                                  <Clock className="w-3 h-3" /> {challenge.timeEstimate}
-                                </span>
-                                <span className="text-xs text-gray-500 capitalize">{region?.category}</span>
-                              </div>
-                            </div>
-                            {isCompleted ? (
-                              <CheckCircle2 className="w-6 h-6 text-emerald-400 flex-shrink-0" />
-                            ) : challenge.requiresDrawing ? (
-                              <button
-                                onClick={() => startDrawingChallenge(challenge)}
-                                className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium transition-colors flex-shrink-0"
-                              >
-                                Draw
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleCompleteChallenge(challenge)}
-                                className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-black text-xs font-medium transition-colors flex-shrink-0"
-                              >
-                                Complete
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Open Full Challenges Button */}
-                  {onOpenFullChallenges && (
-                    <button
-                      onClick={onOpenFullChallenges}
-                      className="w-full py-2.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 text-sm font-medium transition-colors"
-                    >
-                      View All Challenges
-                    </button>
+                  {/* Saved Glyphs Gallery */}
+                  {savedGlyphs.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-500 uppercase tracking-wider">Gallery ({savedGlyphs.length})</p>
+                      <div className="grid grid-cols-4 gap-2">
+                        {savedGlyphs.slice(0, 8).map((glyph, idx) => (
+                          <img
+                            key={idx}
+                            src={glyph}
+                            alt={`Glyph ${idx + 1}`}
+                            className="w-full aspect-square rounded-lg border border-gray-700 bg-gray-900 object-cover"
+                          />
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </>
               )}
