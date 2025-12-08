@@ -39,6 +39,9 @@ import {
   TrendingUp,
   Gift,
   ChevronRight,
+  Palette,
+  Calendar,
+  Plus,
 } from 'lucide-react';
 import type { DeltaHVState } from '../lib/deltaHVEngine';
 import { BRAIN_REGIONS, type BrainRegion, type BrainRegionCategory } from '../lib/glyphSystem';
@@ -50,10 +53,29 @@ import {
 } from '../lib/unifiedChallengeSystem';
 import MiniGames from './MiniGames';
 
+// Check-in type matching App.tsx
+interface CheckIn {
+  id: string;
+  category: string;
+  task: string;
+  waveId?: string;
+  slot: string;
+  loggedAt: string;
+  note?: string;
+  done: boolean;
+  expanded?: boolean;
+  isAnchor?: boolean;
+}
+
 interface BrainRegionChallengeProps {
   deltaHV: DeltaHVState | null;
   onClose: () => void;
   onCompleteChallenge?: (challengeId: string, xp: number) => void;
+  // Calendar beat creation
+  onCreateBeat?: (beat: Omit<CheckIn, 'id' | 'loggedAt' | 'done'>) => void;
+  // Navigation to other views
+  onNavigateToChallenges?: () => void;
+  onNavigateToCosmetics?: () => void;
 }
 
 type ViewTab = 'challenges' | 'brain' | 'mini_games' | 'secrets';
@@ -106,6 +128,9 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
   deltaHV,
   onClose,
   onCompleteChallenge,
+  onCreateBeat,
+  onNavigateToChallenges,
+  onNavigateToCosmetics,
 }) => {
   const [activeTab, setActiveTab] = useState<ViewTab>('challenges');
   const [selectedCategory, setSelectedCategory] = useState<BrainRegionCategory | 'all'>('all');
@@ -205,6 +230,62 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
     }
   }, []);
 
+  // Create a calendar beat for task verification
+  const handleCreateBeat = useCallback((challenge: ActiveChallenge) => {
+    if (!onCreateBeat) {
+      // If no beat creation callback, allow direct completion
+      handleCompleteChallenge(challenge.id);
+      return;
+    }
+
+    // Calculate time slot (30 min from now)
+    const now = new Date();
+    const futureTime = new Date(now.getTime() + 30 * 60000);
+    const hours = futureTime.getHours();
+    const minutes = futureTime.getMinutes();
+    const slot = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+
+    // Create a beat for verification
+    onCreateBeat({
+      category: 'Challenge',
+      task: `${challenge.icon} ${challenge.title}`,
+      slot,
+      note: `Complete: ${challenge.description}. Mark done when finished to earn +${challenge.xpReward} XP!`,
+      isAnchor: false,
+    });
+
+    setSelectedChallenge(null);
+  }, [onCreateBeat, handleCompleteChallenge]);
+
+  // Create a beat for brain task verification
+  const handleCreateBrainBeat = useCallback((region: BrainRegion, task: typeof BRAIN_TASKS.cortical[0]) => {
+    if (!onCreateBeat) {
+      // If no beat creation callback, allow direct completion
+      handleCompleteBrainTask(region);
+      return;
+    }
+
+    const now = new Date();
+    const futureTime = new Date(now.getTime() + 30 * 60000);
+    const hours = futureTime.getHours();
+    const minutes = futureTime.getMinutes();
+    const slot = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+
+    const xp = region.category === 'cortical' ? 30 :
+               region.category === 'limbic' ? 25 :
+               region.category === 'subcortical' ? 20 : 20;
+
+    onCreateBeat({
+      category: 'Brain Task',
+      task: `${region.glyph} ${task.title}`,
+      slot,
+      note: `${task.description} (~${task.timeEstimate}). Mark done when finished to earn +${xp} XP!`,
+      isAnchor: false,
+    });
+
+    setSelectedBrainTask(null);
+  }, [onCreateBeat, handleCompleteBrainTask]);
+
   // Get icon for challenge type
   const getChallengeTypeIcon = (type: ChallengeType) => {
     switch (type) {
@@ -270,16 +351,46 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="flex items-center gap-4">
+        {/* Stats & Navigation */}
+        <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/20 rounded-lg border border-orange-500/30">
             <Flame className="w-4 h-4 text-orange-400" />
-            <span className="text-sm text-orange-300">{stats.currentStreak} day streak</span>
+            <span className="text-sm text-orange-300">{stats.currentStreak}</span>
           </div>
           <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-500/20 rounded-lg border border-purple-500/30">
             <Sparkles className="w-4 h-4 text-purple-400" />
             <span className="text-sm text-purple-300">{stats.totalXP} XP</span>
           </div>
+
+          {/* Navigation to Challenges (Old Hub) */}
+          {onNavigateToChallenges && (
+            <button
+              onClick={() => {
+                onClose();
+                onNavigateToChallenges();
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 transition-colors"
+              title="View All Challenges"
+            >
+              <Target className="w-4 h-4" />
+              <span className="text-sm hidden sm:inline">Hub</span>
+            </button>
+          )}
+
+          {/* Navigation to Cosmetics */}
+          {onNavigateToCosmetics && (
+            <button
+              onClick={() => {
+                onClose();
+                onNavigateToCosmetics();
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-pink-500/20 border border-pink-500/30 text-pink-300 hover:bg-pink-500/30 transition-colors"
+              title="Cosmetics Inventory"
+            >
+              <Palette className="w-4 h-4" />
+              <span className="text-sm hidden sm:inline">Cosmetics</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -583,6 +694,8 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
           challenge={selectedChallenge}
           onClose={() => setSelectedChallenge(null)}
           onComplete={() => handleCompleteChallenge(selectedChallenge.id)}
+          onScheduleBeat={() => handleCreateBeat(selectedChallenge)}
+          showBeatOption={!!onCreateBeat && selectedChallenge.type !== 'mini_game'}
           difficultyColors={difficultyColors}
         />
       )}
@@ -594,6 +707,8 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
           task={selectedBrainTask.task}
           onClose={() => setSelectedBrainTask(null)}
           onComplete={() => handleCompleteBrainTask(selectedBrainTask.region)}
+          onScheduleBeat={() => handleCreateBrainBeat(selectedBrainTask.region, selectedBrainTask.task)}
+          showBeatOption={!!onCreateBeat}
         />
       )}
 
@@ -686,6 +801,8 @@ interface ChallengeModalProps {
   challenge: ActiveChallenge;
   onClose: () => void;
   onComplete: () => void;
+  onScheduleBeat?: () => void;
+  showBeatOption?: boolean;
   difficultyColors: Record<string, string>;
 }
 
@@ -693,6 +810,8 @@ const ChallengeModal: React.FC<ChallengeModalProps> = ({
   challenge,
   onClose,
   onComplete,
+  onScheduleBeat,
+  showBeatOption,
   difficultyColors,
 }) => (
   <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-60 p-4">
@@ -732,6 +851,18 @@ const ChallengeModal: React.FC<ChallengeModalProps> = ({
           </div>
         </div>
 
+        {/* Beat scheduling option */}
+        {showBeatOption && onScheduleBeat && (
+          <button
+            onClick={onScheduleBeat}
+            className="w-full px-4 py-3 rounded-lg bg-cyan-900/30 border border-cyan-500/30 text-cyan-300 text-sm hover:bg-cyan-900/50 transition-colors flex items-center justify-center gap-2"
+          >
+            <Calendar className="w-4 h-4" />
+            <span>Add to Calendar & Complete Later</span>
+            <Plus className="w-3 h-3" />
+          </button>
+        )}
+
         <div className="flex gap-3 pt-2">
           <button
             onClick={onClose}
@@ -744,7 +875,7 @@ const ChallengeModal: React.FC<ChallengeModalProps> = ({
             className="flex-1 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white text-sm font-medium flex items-center justify-center gap-2"
           >
             <CheckCircle2 className="w-4 h-4" />
-            Complete
+            {showBeatOption ? 'Done Now' : 'Complete'}
           </button>
         </div>
       </div>
@@ -757,6 +888,8 @@ interface BrainTaskModalProps {
   task: typeof BRAIN_TASKS.cortical[0];
   onClose: () => void;
   onComplete: () => void;
+  onScheduleBeat?: () => void;
+  showBeatOption?: boolean;
 }
 
 const BrainTaskModal: React.FC<BrainTaskModalProps> = ({
@@ -764,6 +897,8 @@ const BrainTaskModal: React.FC<BrainTaskModalProps> = ({
   task,
   onClose,
   onComplete,
+  onScheduleBeat,
+  showBeatOption,
 }) => {
   const gradient = BRAIN_REGION_GRADIENTS[region.category];
   const xp = region.category === 'cortical' ? 30 :
@@ -825,6 +960,18 @@ const BrainTaskModal: React.FC<BrainTaskModalProps> = ({
             </div>
           </div>
 
+          {/* Beat scheduling option */}
+          {showBeatOption && onScheduleBeat && (
+            <button
+              onClick={onScheduleBeat}
+              className="w-full px-4 py-3 rounded-lg bg-cyan-900/30 border border-cyan-500/30 text-cyan-300 text-sm hover:bg-cyan-900/50 transition-colors flex items-center justify-center gap-2"
+            >
+              <Calendar className="w-4 h-4" />
+              <span>Add to Calendar & Complete Later</span>
+              <Plus className="w-3 h-3" />
+            </button>
+          )}
+
           <div className="flex gap-3 pt-2">
             <button
               onClick={onClose}
@@ -840,7 +987,7 @@ const BrainTaskModal: React.FC<BrainTaskModalProps> = ({
               }}
             >
               <CheckCircle2 className="w-4 h-4" />
-              Complete Task
+              {showBeatOption ? 'Done Now' : 'Complete Task'}
             </button>
           </div>
         </div>
