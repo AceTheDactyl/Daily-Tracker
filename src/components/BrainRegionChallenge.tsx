@@ -1,16 +1,16 @@
 /**
- * Brain Region Challenge Component
+ * Unified Brain Region Challenge Component
  *
- * A gamified brain-region task completion system that replaces the drawing canvas.
- * Users complete challenges associated with specific brain regions to improve their
- * DeltaHV metrics and unlock achievements.
+ * Combines brain region wellness tasks with daily challenges, mini-games,
+ * and cosmetic rewards. Uses unified XP system across all challenge types.
  *
  * Features:
- * - 100 brain regions mapped to challenges
- * - Gamified task completion with XP and streaks
- * - Integration with DeltaHV metrics
- * - Visual progress tracking
- * - Achievement system
+ * - Brain region-specific wellness tasks
+ * - Daily challenges tied to site activity (music, time, tasks)
+ * - Interactive mini-games (riddles, math, color sequence, memory)
+ * - Secret challenges with hints
+ * - Unified XP and cosmetic reward system
+ * - Unique hex gradient cosmetics per brain region
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -23,262 +23,208 @@ import {
   Sparkles,
   CheckCircle2,
   Clock,
-  ArrowRight,
   Flame,
   Star,
   Crown,
   Eye,
   Activity,
   Layers,
+  Pin,
+  PinOff,
+  Lock,
+  HelpCircle,
+  Gamepad2,
+  Music,
+  ListChecks,
+  TrendingUp,
+  Gift,
+  ChevronRight,
 } from 'lucide-react';
 import type { DeltaHVState } from '../lib/deltaHVEngine';
 import { BRAIN_REGIONS, type BrainRegion, type BrainRegionCategory } from '../lib/glyphSystem';
+import {
+  unifiedChallengeService,
+  BRAIN_REGION_GRADIENTS,
+  type ActiveChallenge,
+  type ChallengeType,
+} from '../lib/unifiedChallengeSystem';
+import MiniGames from './MiniGames';
 
 interface BrainRegionChallengeProps {
   deltaHV: DeltaHVState | null;
   onClose: () => void;
-  onCompleteChallenge?: (regionId: string, xp: number) => void;
+  onCompleteChallenge?: (challengeId: string, xp: number) => void;
 }
 
-interface Challenge {
-  id: string;
-  regionId: string;
-  title: string;
-  description: string;
-  xpReward: number;
-  difficulty: 'easy' | 'medium' | 'hard';
-  timeEstimate: string;
-  category: 'quick' | 'focus' | 'creative' | 'physical' | 'social' | 'reflective';
-  beatSuggestion?: string;
-}
+type ViewTab = 'challenges' | 'brain' | 'mini_games' | 'secrets';
 
-interface CompletedChallenge {
-  challengeId: string;
-  regionId: string;
-  completedAt: string;
-  xpEarned: number;
-}
-
-// Generate challenges for each brain region
-function generateChallenges(regions: BrainRegion[]): Challenge[] {
-  const challenges: Challenge[] = [];
-
-  const challengeTemplates: Record<BrainRegionCategory, { title: string; description: string; category: Challenge['category'] }[]> = {
-    cortical: [
-      { title: 'Deep Focus Session', description: 'Complete 25 minutes of uninterrupted focus work', category: 'focus' },
-      { title: 'Creative Expression', description: 'Write, draw, or create something meaningful', category: 'creative' },
-      { title: 'Problem Solving', description: 'Work through a challenging problem step by step', category: 'focus' },
-      { title: 'Learning Sprint', description: 'Learn something new for 15 minutes', category: 'focus' },
-    ],
-    limbic: [
-      { title: 'Gratitude Practice', description: 'Write down 3 things you\'re grateful for today', category: 'reflective' },
-      { title: 'Emotional Check-In', description: 'Sit quietly and identify your current emotions', category: 'reflective' },
-      { title: 'Connect with Someone', description: 'Have a meaningful conversation with a friend or family member', category: 'social' },
-      { title: 'Self-Compassion Break', description: 'Speak kindly to yourself for 5 minutes', category: 'reflective' },
-    ],
-    subcortical: [
-      { title: 'Movement Break', description: 'Do 10 minutes of physical activity', category: 'physical' },
-      { title: 'Reward Reflection', description: 'Celebrate a recent accomplishment, no matter how small', category: 'quick' },
-      { title: 'Habit Stack', description: 'Complete a small habit immediately after an existing one', category: 'quick' },
-      { title: 'Dopamine Detox Hour', description: 'Avoid screens and instant gratification for 1 hour', category: 'focus' },
-    ],
-    brainstem: [
-      { title: 'Breathing Exercise', description: 'Complete 4-7-8 breathing pattern for 5 minutes', category: 'quick' },
-      { title: 'Body Scan', description: 'Do a full body relaxation scan from head to toe', category: 'physical' },
-      { title: 'Grounding Exercise', description: '5-4-3-2-1 sensory grounding technique', category: 'quick' },
-      { title: 'Cold Exposure', description: 'Take a cold shower or splash cold water on face', category: 'physical' },
-    ],
-    cerebellar: [
-      { title: 'Balance Practice', description: 'Stand on one foot for 1 minute each side', category: 'physical' },
-      { title: 'Coordination Drill', description: 'Practice a skill that requires coordination', category: 'physical' },
-      { title: 'Rhythm Exercise', description: 'Tap out a rhythm pattern or dance to music', category: 'physical' },
-      { title: 'Fine Motor Task', description: 'Complete a detailed task requiring precision', category: 'focus' },
-    ],
-    sensory: [
-      { title: 'Mindful Listening', description: 'Close your eyes and focus on sounds for 5 minutes', category: 'reflective' },
-      { title: 'Texture Exploration', description: 'Touch 5 different textures and notice sensations', category: 'quick' },
-      { title: 'Visual Focus', description: 'Practice focused gazing on a single point for 2 minutes', category: 'quick' },
-      { title: 'Taste Mindfully', description: 'Eat something slowly, noticing every flavor', category: 'reflective' },
-    ],
-    motor: [
-      { title: 'Stretching Routine', description: 'Complete a 10-minute stretch sequence', category: 'physical' },
-      { title: 'Walking Meditation', description: 'Take a mindful walk, noticing each step', category: 'physical' },
-      { title: 'Hand-Eye Challenge', description: 'Practice catching or juggling for 5 minutes', category: 'physical' },
-      { title: 'Dance Break', description: 'Put on music and move freely for one song', category: 'physical' },
-    ],
-    integration: [
-      { title: 'Mind-Body Sync', description: 'Do yoga or tai chi for 15 minutes', category: 'physical' },
-      { title: 'Multi-Task Challenge', description: 'Safely combine two simple activities mindfully', category: 'focus' },
-      { title: 'Cross-Brain Exercise', description: 'Do an activity that uses both hands equally', category: 'physical' },
-      { title: 'Integration Meditation', description: 'Visualize energy flowing through your entire body', category: 'reflective' },
-    ],
-  };
-
-  // Map categories to beat suggestions
-  const categoryBeats: Record<BrainRegionCategory, string> = {
-    cortical: 'Focus',
-    limbic: 'Emotion',
-    subcortical: 'Workout',
-    brainstem: 'Meditation',
-    cerebellar: 'Workout',
-    sensory: 'Meditation',
-    motor: 'Workout',
-    integration: 'Meditation',
-  };
-
-  regions.forEach((region, idx) => {
-    const templates = challengeTemplates[region.category] || challengeTemplates.cortical;
-    const template = templates[idx % templates.length];
-
-    challenges.push({
-      id: `challenge-${region.id}`,
-      regionId: region.id,
-      title: template.title,
-      description: template.description,
-      xpReward: region.category === 'cortical' ? 30 :
-                region.category === 'limbic' ? 25 :
-                region.category === 'subcortical' ? 20 :
-                region.category === 'brainstem' ? 15 : 20,
-      difficulty: region.category === 'cortical' ? 'hard' :
-                  region.category === 'limbic' ? 'medium' : 'easy',
-      timeEstimate: template.category === 'quick' ? '5 min' :
-                    template.category === 'focus' ? '25 min' :
-                    template.category === 'physical' ? '10 min' : '15 min',
-      category: template.category,
-      beatSuggestion: categoryBeats[region.category],
-    });
-  });
-
-  return challenges;
-}
-
-const CHALLENGE_STORAGE_KEY = 'brain-region-challenges-completed';
-const XP_STORAGE_KEY = 'brain-region-xp';
-const STREAK_STORAGE_KEY = 'brain-region-streak';
+// Brain task templates for each category
+const BRAIN_TASKS: Record<BrainRegionCategory, Array<{ title: string; description: string; timeEstimate: string }>> = {
+  cortical: [
+    { title: 'Deep Focus Session', description: 'Complete 25 minutes of uninterrupted focus work', timeEstimate: '25 min' },
+    { title: 'Problem Solving', description: 'Work through a challenging problem step by step', timeEstimate: '15 min' },
+    { title: 'Learning Sprint', description: 'Learn something new for 15 minutes', timeEstimate: '15 min' },
+  ],
+  limbic: [
+    { title: 'Gratitude Practice', description: 'Write down 3 things you\'re grateful for', timeEstimate: '5 min' },
+    { title: 'Emotional Check-In', description: 'Sit quietly and identify your current emotions', timeEstimate: '5 min' },
+    { title: 'Self-Compassion Break', description: 'Speak kindly to yourself for 5 minutes', timeEstimate: '5 min' },
+  ],
+  subcortical: [
+    { title: 'Reward Reflection', description: 'Celebrate a recent accomplishment, no matter how small', timeEstimate: '5 min' },
+    { title: 'Habit Stack', description: 'Complete a small habit immediately after an existing one', timeEstimate: '5 min' },
+    { title: 'Dopamine Detox', description: 'Avoid screens for 30 minutes', timeEstimate: '30 min' },
+  ],
+  brainstem: [
+    { title: 'Breathing Exercise', description: 'Complete 4-7-8 breathing pattern for 5 minutes', timeEstimate: '5 min' },
+    { title: 'Body Scan', description: 'Do a full body relaxation scan from head to toe', timeEstimate: '10 min' },
+    { title: 'Grounding Exercise', description: '5-4-3-2-1 sensory grounding technique', timeEstimate: '5 min' },
+  ],
+  cerebellar: [
+    { title: 'Balance Practice', description: 'Stand on one foot for 1 minute each side', timeEstimate: '3 min' },
+    { title: 'Coordination Drill', description: 'Practice a skill that requires coordination', timeEstimate: '10 min' },
+    { title: 'Rhythm Exercise', description: 'Tap out a rhythm pattern or dance to music', timeEstimate: '5 min' },
+  ],
+  sensory: [
+    { title: 'Mindful Listening', description: 'Close your eyes and focus on sounds for 5 minutes', timeEstimate: '5 min' },
+    { title: 'Texture Exploration', description: 'Touch 5 different textures and notice sensations', timeEstimate: '5 min' },
+    { title: 'Visual Focus', description: 'Practice focused gazing on a single point for 2 minutes', timeEstimate: '2 min' },
+  ],
+  motor: [
+    { title: 'Stretching Routine', description: 'Complete a 10-minute stretch sequence', timeEstimate: '10 min' },
+    { title: 'Walking Meditation', description: 'Take a mindful walk, noticing each step', timeEstimate: '10 min' },
+    { title: 'Dance Break', description: 'Put on music and move freely for one song', timeEstimate: '5 min' },
+  ],
+  integration: [
+    { title: 'Mind-Body Sync', description: 'Do yoga or tai chi for 15 minutes', timeEstimate: '15 min' },
+    { title: 'Cross-Brain Exercise', description: 'Do an activity that uses both hands equally', timeEstimate: '10 min' },
+    { title: 'Integration Meditation', description: 'Visualize energy flowing through your entire body', timeEstimate: '10 min' },
+  ],
+};
 
 export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
   deltaHV,
   onClose,
   onCompleteChallenge,
 }) => {
-  const [completedChallenges, setCompletedChallenges] = useState<CompletedChallenge[]>([]);
-  const [totalXP, setTotalXP] = useState(0);
-  const [streak, setStreak] = useState(0);
+  const [activeTab, setActiveTab] = useState<ViewTab>('challenges');
   const [selectedCategory, setSelectedCategory] = useState<BrainRegionCategory | 'all'>('all');
-  const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
-  const [showCompleted, setShowCompleted] = useState(false);
+  const [selectedChallenge, setSelectedChallenge] = useState<ActiveChallenge | null>(null);
+  const [selectedBrainTask, setSelectedBrainTask] = useState<{ region: BrainRegion; task: typeof BRAIN_TASKS.cortical[0] } | null>(null);
+  const [activeMiniGame, setActiveMiniGame] = useState<ActiveChallenge | null>(null);
+  const [stats, setStats] = useState(unifiedChallengeService.getStats());
+  const [activeChallenges, setActiveChallenges] = useState<ActiveChallenge[]>([]);
+  const [showRewardAnimation, setShowRewardAnimation] = useState<{ xp: number; cosmetic?: string } | null>(null);
 
-  // Load from localStorage
+  // Load challenges and stats
   useEffect(() => {
-    try {
-      const savedCompleted = localStorage.getItem(CHALLENGE_STORAGE_KEY);
-      if (savedCompleted) setCompletedChallenges(JSON.parse(savedCompleted));
-
-      const savedXP = localStorage.getItem(XP_STORAGE_KEY);
-      if (savedXP) setTotalXP(parseInt(savedXP));
-
-      const savedStreak = localStorage.getItem(STREAK_STORAGE_KEY);
-      if (savedStreak) setStreak(parseInt(savedStreak));
-    } catch (e) {
-      console.error('Failed to load challenge data:', e);
-    }
-  }, []);
-
-  // Save to localStorage
-  const saveData = useCallback(() => {
-    localStorage.setItem(CHALLENGE_STORAGE_KEY, JSON.stringify(completedChallenges));
-    localStorage.setItem(XP_STORAGE_KEY, totalXP.toString());
-    localStorage.setItem(STREAK_STORAGE_KEY, streak.toString());
-  }, [completedChallenges, totalXP, streak]);
-
-  useEffect(() => {
-    saveData();
-  }, [saveData]);
-
-  // Generate challenges from brain regions
-  const challenges = useMemo(() => {
-    return generateChallenges(BRAIN_REGIONS);
-  }, []);
-
-  // Filter challenges
-  const filteredChallenges = useMemo(() => {
-    let result = challenges;
-
-    if (selectedCategory !== 'all') {
-      const regionIds = BRAIN_REGIONS
-        .filter(r => r.category === selectedCategory)
-        .map(r => r.id);
-      result = result.filter(c => regionIds.includes(c.regionId));
-    }
-
-    if (!showCompleted) {
-      const completedIds = completedChallenges.map(c => c.challengeId);
-      result = result.filter(c => !completedIds.includes(c.id));
-    }
-
-    return result;
-  }, [challenges, selectedCategory, showCompleted, completedChallenges]);
-
-  // Complete a challenge
-  const handleCompleteChallenge = useCallback((challenge: Challenge) => {
-    const completed: CompletedChallenge = {
-      challengeId: challenge.id,
-      regionId: challenge.regionId,
-      completedAt: new Date().toISOString(),
-      xpEarned: challenge.xpReward,
+    const loadData = () => {
+      setStats(unifiedChallengeService.getStats());
+      setActiveChallenges(unifiedChallengeService.getActiveChallenges(true));
     };
 
-    setCompletedChallenges(prev => [...prev, completed]);
-    setTotalXP(prev => prev + challenge.xpReward);
+    loadData();
+    const unsubscribe = unifiedChallengeService.subscribe(loadData);
+    return unsubscribe;
+  }, []);
 
-    // Update streak if completing on a new day
-    const today = new Date().toDateString();
-    const lastCompleted = completedChallenges[completedChallenges.length - 1];
-    if (!lastCompleted || new Date(lastCompleted.completedAt).toDateString() !== today) {
-      setStreak(prev => prev + 1);
+  // Check secret conditions when metrics change
+  useEffect(() => {
+    if (deltaHV) {
+      unifiedChallengeService.checkSecretConditions({
+        symbolic: deltaHV.symbolicDensity,
+        resonance: deltaHV.resonanceCoupling,
+        friction: deltaHV.frictionCoefficient,
+        stability: deltaHV.harmonicStability,
+      });
     }
+  }, [deltaHV]);
 
+  // Filter challenges by type
+  const challengesByType = useMemo(() => {
+    const daily = activeChallenges.filter(c => c.type === 'site_activity' || c.type === 'metric_goal' || c.type === 'brain_task');
+    const miniGames = activeChallenges.filter(c => c.type === 'mini_game' && !c.completed);
+    const secrets = activeChallenges.filter(c => c.type === 'secret');
+
+    return { daily, miniGames, secrets };
+  }, [activeChallenges]);
+
+  // Get brain regions filtered by category
+  const filteredRegions = useMemo(() => {
+    if (selectedCategory === 'all') return BRAIN_REGIONS.slice(0, 16); // Show first 16 for now
+    return BRAIN_REGIONS.filter(r => r.category === selectedCategory).slice(0, 8);
+  }, [selectedCategory]);
+
+  // Complete a challenge
+  const handleCompleteChallenge = useCallback((challengeId: string) => {
+    const result = unifiedChallengeService.completeChallenge(challengeId);
+    if (result) {
+      setShowRewardAnimation({ xp: result.xpEarned, cosmetic: result.cosmeticUnlocked || undefined });
+      setTimeout(() => setShowRewardAnimation(null), 3000);
+      onCompleteChallenge?.(challengeId, result.xpEarned);
+    }
     setSelectedChallenge(null);
-    onCompleteChallenge?.(challenge.regionId, challenge.xpReward);
-  }, [completedChallenges, onCompleteChallenge]);
+  }, [onCompleteChallenge]);
 
-  // Get recommended challenges based on DeltaHV
-  const recommendedChallenges = useMemo(() => {
-    if (!deltaHV) return filteredChallenges.slice(0, 3);
+  // Complete a brain task (awards XP)
+  const handleCompleteBrainTask = useCallback((region: BrainRegion) => {
+    const xp = region.category === 'cortical' ? 30 :
+               region.category === 'limbic' ? 25 :
+               region.category === 'subcortical' ? 20 : 20;
 
-    const { symbolicDensity, resonanceCoupling, frictionCoefficient, harmonicStability } = deltaHV;
+    const result = unifiedChallengeService.addXP(xp);
+    setShowRewardAnimation({ xp });
+    setTimeout(() => setShowRewardAnimation(null), 3000);
+    onCompleteChallenge?.(region.id, xp);
+    setSelectedBrainTask(null);
 
-    // Prioritize based on what metrics need improvement
-    let priorityCategories: BrainRegionCategory[] = [];
+    if (result.levelUp) {
+      // Could show level up animation here
+    }
+  }, [onCompleteChallenge]);
 
-    if (symbolicDensity < 50) priorityCategories.push('cortical');
-    if (resonanceCoupling < 50) priorityCategories.push('limbic');
-    if (frictionCoefficient > 50) priorityCategories.push('brainstem');
-    if (harmonicStability < 50) priorityCategories.push('cerebellar');
+  // Complete mini-game
+  const handleMiniGameComplete = useCallback((score: number) => {
+    if (!activeMiniGame) return;
 
-    if (priorityCategories.length === 0) priorityCategories = ['cortical', 'limbic'];
+    const result = unifiedChallengeService.completeMiniGame(activeMiniGame.id, score);
+    if (result) {
+      setShowRewardAnimation({ xp: result.xpEarned, cosmetic: result.cosmeticUnlocked || undefined });
+      setTimeout(() => setShowRewardAnimation(null), 3000);
+      onCompleteChallenge?.(activeMiniGame.id, result.xpEarned);
+    }
+    setActiveMiniGame(null);
+  }, [activeMiniGame, onCompleteChallenge]);
 
-    const priorityRegionIds = BRAIN_REGIONS
-      .filter(r => priorityCategories.includes(r.category))
-      .map(r => r.id);
+  // Pin/unpin challenge
+  const handleTogglePin = useCallback((challengeId: string, isPinned: boolean) => {
+    if (isPinned) {
+      unifiedChallengeService.unpinChallenge(challengeId);
+    } else {
+      unifiedChallengeService.pinChallenge(challengeId);
+    }
+  }, []);
 
-    const completedIds = completedChallenges.map(c => c.challengeId);
-    const recommended = challenges
-      .filter(c => priorityRegionIds.includes(c.regionId) && !completedIds.includes(c.id))
-      .slice(0, 3);
+  // Get icon for challenge type
+  const getChallengeTypeIcon = (type: ChallengeType) => {
+    switch (type) {
+      case 'site_activity': return <Music className="w-4 h-4" />;
+      case 'metric_goal': return <TrendingUp className="w-4 h-4" />;
+      case 'brain_task': return <Brain className="w-4 h-4" />;
+      case 'mini_game': return <Gamepad2 className="w-4 h-4" />;
+      case 'secret': return <Lock className="w-4 h-4" />;
+      default: return <Star className="w-4 h-4" />;
+    }
+  };
 
-    return recommended.length > 0 ? recommended : filteredChallenges.slice(0, 3);
-  }, [deltaHV, challenges, filteredChallenges, completedChallenges]);
+  const difficultyColors = {
+    easy: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+    medium: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+    hard: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+    legendary: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  };
 
-  // Calculate level from XP
-  const level = Math.floor(totalXP / 100) + 1;
-  const xpToNextLevel = 100 - (totalXP % 100);
-  const levelProgress = (totalXP % 100) / 100 * 100;
-
-  // Get region info for a challenge
-  const getRegion = (regionId: string) => BRAIN_REGIONS.find(r => r.id === regionId);
-
-  const categories: { id: BrainRegionCategory | 'all'; label: string; icon: React.ReactNode; color: string }[] = [
+  const categories: Array<{ id: BrainRegionCategory | 'all'; label: string; icon: React.ReactNode; color: string }> = [
     { id: 'all', label: 'All', icon: <Brain className="w-4 h-4" />, color: 'gray' },
     { id: 'cortical', label: 'Mind', icon: <Sparkles className="w-4 h-4" />, color: 'purple' },
     { id: 'limbic', label: 'Emotion', icon: <Heart className="w-4 h-4" />, color: 'pink' },
@@ -290,11 +236,14 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
     { id: 'integration', label: 'Integrate', icon: <Layers className="w-4 h-4" />, color: 'indigo' },
   ];
 
-  const difficultyColors = {
-    easy: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-    medium: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-    hard: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
-  };
+  const tabs: Array<{ id: ViewTab; label: string; icon: React.ReactNode; count?: number }> = [
+    { id: 'challenges', label: 'Daily', icon: <ListChecks className="w-4 h-4" />, count: challengesByType.daily.filter(c => !c.completed).length },
+    { id: 'brain', label: 'Brain Tasks', icon: <Brain className="w-4 h-4" /> },
+    { id: 'mini_games', label: 'Mini Games', icon: <Gamepad2 className="w-4 h-4" />, count: challengesByType.miniGames.length },
+    { id: 'secrets', label: 'Secrets', icon: <HelpCircle className="w-4 h-4" />, count: stats.secretsFound },
+  ];
+
+  const levelProgress = (stats.totalXP % 100);
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex flex-col overflow-hidden">
@@ -303,74 +252,200 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
         <button onClick={onClose} className="p-2 rounded-lg bg-gray-900/70 border border-gray-800 hover:bg-gray-800">
           <X className="w-6 h-6" />
         </button>
+
+        {/* Level & XP */}
         <div className="flex items-center gap-3">
           <div className="text-center">
             <div className="flex items-center gap-2">
               <Crown className="w-5 h-5 text-amber-400" />
-              <span className="text-lg font-medium text-white">Level {level}</span>
+              <span className="text-lg font-medium text-white">Level {stats.level}</span>
             </div>
-            <div className="w-24 h-1.5 bg-gray-800 rounded-full overflow-hidden mt-1">
-              <div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all"
-                style={{ width: `${levelProgress}%` }} />
+            <div className="w-32 h-1.5 bg-gray-800 rounded-full overflow-hidden mt-1">
+              <div
+                className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all"
+                style={{ width: `${levelProgress}%` }}
+              />
             </div>
-            <span className="text-xs text-gray-500">{xpToNextLevel} XP to next</span>
+            <span className="text-xs text-gray-500">{stats.xpToNextLevel} XP to next</span>
           </div>
         </div>
+
+        {/* Stats */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/20 rounded-lg border border-orange-500/30">
             <Flame className="w-4 h-4 text-orange-400" />
-            <span className="text-sm text-orange-300">{streak} day streak</span>
+            <span className="text-sm text-orange-300">{stats.currentStreak} day streak</span>
           </div>
           <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-500/20 rounded-lg border border-purple-500/30">
             <Sparkles className="w-4 h-4 text-purple-400" />
-            <span className="text-sm text-purple-300">{totalXP} XP</span>
+            <span className="text-sm text-purple-300">{stats.totalXP} XP</span>
           </div>
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="flex items-center gap-2 p-3 border-b border-gray-800 overflow-x-auto">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-colors ${
+              activeTab === tab.id
+                ? 'bg-purple-500/30 text-purple-300 border border-purple-500/50'
+                : 'bg-gray-800/50 text-gray-400 border border-gray-700 hover:border-gray-600'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+            {tab.count !== undefined && tab.count > 0 && (
+              <span className={`px-1.5 py-0.5 rounded text-xs ${
+                activeTab === tab.id ? 'bg-purple-500/50' : 'bg-gray-700'
+              }`}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        {/* Title */}
-        <div className="text-center mb-6">
-          <h2 className="text-2xl font-light text-white flex items-center justify-center gap-3">
-            <Brain className="w-8 h-8 text-purple-400" />
-            Brain Region Challenges
-          </h2>
-          <p className="text-sm text-gray-400 mt-2">
-            Complete challenges to activate brain regions and improve your metrics
-          </p>
-        </div>
+        {/* DAILY CHALLENGES TAB */}
+        {activeTab === 'challenges' && (
+          <div className="space-y-6">
+            <div className="text-center mb-4">
+              <h2 className="text-xl font-light text-white flex items-center justify-center gap-3">
+                <Target className="w-6 h-6 text-cyan-400" />
+                Daily Challenges
+              </h2>
+              <p className="text-sm text-gray-400 mt-1">
+                Complete challenges to earn XP and unlock cosmetics
+              </p>
+            </div>
 
-        {/* Recommended Challenges */}
-        {recommendedChallenges.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Target className="w-4 h-4 text-cyan-400" />
-              Recommended for You
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {recommendedChallenges.map(challenge => {
-                const region = getRegion(challenge.regionId);
+            {/* Pinned Challenges */}
+            {challengesByType.daily.filter(c => c.isPinned && !c.completed).length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Pin className="w-4 h-4 text-amber-400" />
+                  Pinned
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {challengesByType.daily.filter(c => c.isPinned && !c.completed).map(challenge => (
+                    <ChallengeCard
+                      key={challenge.id}
+                      challenge={challenge}
+                      onSelect={() => setSelectedChallenge(challenge)}
+                      onTogglePin={() => handleTogglePin(challenge.id, true)}
+                      difficultyColors={difficultyColors}
+                      getTypeIcon={getChallengeTypeIcon}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Active Challenges */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {challengesByType.daily.filter(c => !c.isPinned && !c.completed).map(challenge => (
+                <ChallengeCard
+                  key={challenge.id}
+                  challenge={challenge}
+                  onSelect={() => setSelectedChallenge(challenge)}
+                  onTogglePin={() => handleTogglePin(challenge.id, false)}
+                  difficultyColors={difficultyColors}
+                  getTypeIcon={getChallengeTypeIcon}
+                />
+              ))}
+            </div>
+
+            {/* Completed Today */}
+            {challengesByType.daily.filter(c => c.completed).length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  Completed Today ({challengesByType.daily.filter(c => c.completed).length})
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {challengesByType.daily.filter(c => c.completed).map(challenge => (
+                    <div
+                      key={challenge.id}
+                      className="p-3 bg-emerald-900/20 rounded-xl border border-emerald-500/20 opacity-60"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{challenge.icon}</span>
+                        <span className="text-sm text-emerald-300">{challenge.title}</span>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 ml-auto" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* BRAIN TASKS TAB */}
+        {activeTab === 'brain' && (
+          <div className="space-y-6">
+            <div className="text-center mb-4">
+              <h2 className="text-xl font-light text-white flex items-center justify-center gap-3">
+                <Brain className="w-6 h-6 text-purple-400" />
+                Brain Region Tasks
+              </h2>
+              <p className="text-sm text-gray-400 mt-1">
+                Target specific brain regions with wellness activities
+              </p>
+            </div>
+
+            {/* Category Filter */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2">
+              {categories.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
+                    selectedCategory === cat.id
+                      ? 'bg-purple-500/30 text-purple-300 border border-purple-500/50'
+                      : 'bg-gray-800/50 text-gray-400 border border-gray-700 hover:border-gray-600'
+                  }`}
+                >
+                  {cat.icon}
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Brain Region Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {filteredRegions.map(region => {
+                const tasks = BRAIN_TASKS[region.category];
+                const task = tasks[Math.floor(Math.random() * tasks.length)];
+                const gradient = BRAIN_REGION_GRADIENTS[region.category];
+
                 return (
                   <button
-                    key={challenge.id}
-                    onClick={() => setSelectedChallenge(challenge)}
-                    className="p-4 bg-gradient-to-br from-cyan-900/30 to-purple-900/30 rounded-xl border border-cyan-500/30 text-left hover:border-cyan-400/50 transition-colors group"
+                    key={region.id}
+                    onClick={() => setSelectedBrainTask({ region, task })}
+                    className="p-4 rounded-xl border border-gray-800 bg-gray-900/50 hover:border-gray-700 transition-all text-left group"
+                    style={{
+                      background: `linear-gradient(135deg, ${gradient.colors[0]}10, ${gradient.colors[1]}10, ${gradient.colors[2]}10)`,
+                    }}
                   >
-                    <div className="flex items-start gap-3">
-                      <span className="text-2xl">{region?.glyph}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-white truncate">{challenge.title}</div>
-                        <div className="text-xs text-gray-400 truncate">{region?.name}</div>
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className={`text-xs px-1.5 py-0.5 rounded border ${difficultyColors[challenge.difficulty]}`}>
-                            {challenge.difficulty}
-                          </span>
-                          <span className="text-xs text-purple-300">+{challenge.xpReward} XP</span>
-                        </div>
-                      </div>
-                      <ArrowRight className="w-5 h-5 text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="flex items-start justify-between mb-2">
+                      <span className="text-3xl">{region.glyph}</span>
+                      <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
                     </div>
+                    <h4 className="text-sm font-medium text-white truncate">{region.name}</h4>
+                    <p className="text-xs text-gray-500 truncate">{region.category}</p>
+
+                    {/* Gradient preview */}
+                    <div
+                      className="mt-2 h-1 rounded-full"
+                      style={{
+                        background: `linear-gradient(90deg, ${gradient.colors.join(', ')})`,
+                      }}
+                    />
                   </button>
                 );
               })}
@@ -378,148 +453,398 @@ export const BrainRegionChallenge: React.FC<BrainRegionChallengeProps> = ({
           </div>
         )}
 
-        {/* Category Filter */}
-        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2">
-          {categories.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
-                selectedCategory === cat.id
-                  ? `bg-${cat.color}-500/30 text-${cat.color}-300 border border-${cat.color}-500/50`
-                  : 'bg-gray-800/50 text-gray-400 border border-gray-700 hover:border-gray-600'
-              }`}
-            >
-              {cat.icon}
-              {cat.label}
-            </button>
-          ))}
-          <button
-            onClick={() => setShowCompleted(!showCompleted)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ml-auto ${
-              showCompleted
-                ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50'
-                : 'bg-gray-800/50 text-gray-400 border border-gray-700'
-            }`}
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            {showCompleted ? 'Hide Completed' : 'Show Completed'}
-          </button>
-        </div>
+        {/* MINI GAMES TAB */}
+        {activeTab === 'mini_games' && (
+          <div className="space-y-6">
+            <div className="text-center mb-4">
+              <h2 className="text-xl font-light text-white flex items-center justify-center gap-3">
+                <Gamepad2 className="w-6 h-6 text-cyan-400" />
+                Mini Games
+              </h2>
+              <p className="text-sm text-gray-400 mt-1">
+                Quick brain teasers for bonus XP
+              </p>
+            </div>
 
-        {/* Challenge Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {filteredChallenges.map(challenge => {
-            const region = getRegion(challenge.regionId);
-            const isCompleted = completedChallenges.some(c => c.challengeId === challenge.id);
-
-            return (
-              <button
-                key={challenge.id}
-                onClick={() => !isCompleted && setSelectedChallenge(challenge)}
-                disabled={isCompleted}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  isCompleted
-                    ? 'bg-emerald-900/20 border-emerald-500/30 opacity-60'
-                    : 'bg-gray-900/50 border-gray-800 hover:border-gray-700 hover:bg-gray-900/70'
-                }`}
-              >
-                <div className="flex items-start gap-2">
-                  <span className="text-xl">{region?.glyph}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-white truncate flex items-center gap-2">
-                      {challenge.title}
-                      {isCompleted && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {challengesByType.miniGames.map(game => (
+                <button
+                  key={game.id}
+                  onClick={() => setActiveMiniGame(game)}
+                  className="p-5 rounded-2xl border border-gray-800 bg-gradient-to-br from-purple-900/20 to-cyan-900/20 hover:border-purple-500/50 transition-all text-left group"
+                >
+                  <div className="flex items-start gap-4">
+                    <span className="text-4xl">{game.icon}</span>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-medium text-white group-hover:text-purple-300 transition-colors">
+                        {game.title}
+                      </h3>
+                      <p className="text-sm text-gray-400 mt-1">{game.description}</p>
+                      <div className="flex items-center gap-3 mt-3">
+                        <span className={`text-xs px-2 py-0.5 rounded border ${difficultyColors[game.difficulty]}`}>
+                          {game.difficulty}
+                        </span>
+                        <span className="text-sm text-purple-300">+{game.xpReward} XP</span>
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-500 truncate">{region?.name}</div>
+                    <Zap className="w-5 h-5 text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
-                </div>
-                <div className="flex items-center justify-between mt-2">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-3 h-3 text-gray-500" />
-                    <span className="text-xs text-gray-500">{challenge.timeEstimate}</span>
-                  </div>
-                  <span className="text-xs text-purple-300">+{challenge.xpReward} XP</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+                </button>
+              ))}
 
-        {filteredChallenges.length === 0 && (
-          <div className="text-center py-12">
-            <Trophy className="w-12 h-12 text-amber-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-white">All Challenges Completed!</h3>
-            <p className="text-sm text-gray-400 mt-2">
-              Amazing work! You've completed all challenges in this category.
-            </p>
+              {challengesByType.miniGames.length === 0 && (
+                <div className="col-span-2 text-center py-12">
+                  <Trophy className="w-12 h-12 text-amber-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-white">All Games Complete!</h3>
+                  <p className="text-sm text-gray-400 mt-2">Come back tomorrow for new challenges</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SECRETS TAB */}
+        {activeTab === 'secrets' && (
+          <div className="space-y-6">
+            <div className="text-center mb-4">
+              <h2 className="text-xl font-light text-white flex items-center justify-center gap-3">
+                <HelpCircle className="w-6 h-6 text-amber-400" />
+                Secret Challenges
+              </h2>
+              <p className="text-sm text-gray-400 mt-1">
+                Hidden challenges with special rewards
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {unifiedChallengeService.getSecretHints().map(secret => {
+                const challenge = challengesByType.secrets.find(c => c.id === secret.id);
+                const isDiscovered = secret.discovered;
+                const isCompleted = challenge?.completed;
+
+                return (
+                  <div
+                    key={secret.id}
+                    className={`p-5 rounded-2xl border ${
+                      isCompleted
+                        ? 'bg-emerald-900/20 border-emerald-500/30'
+                        : isDiscovered
+                        ? 'bg-purple-900/20 border-purple-500/30 cursor-pointer hover:border-purple-400/50'
+                        : 'bg-gray-900/50 border-gray-800'
+                    }`}
+                    onClick={() => isDiscovered && !isCompleted && challenge && setSelectedChallenge(challenge)}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                        isCompleted ? 'bg-emerald-500/20' : isDiscovered ? 'bg-purple-500/20' : 'bg-gray-800'
+                      }`}>
+                        {isCompleted ? (
+                          <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                        ) : isDiscovered ? (
+                          <span className="text-2xl">{challenge?.icon}</span>
+                        ) : (
+                          <Lock className="w-6 h-6 text-gray-600" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h3 className={`text-lg font-medium ${
+                          isCompleted ? 'text-emerald-300' : isDiscovered ? 'text-white' : 'text-gray-600'
+                        }`}>
+                          {isDiscovered ? challenge?.title || 'Secret' : '???'}
+                        </h3>
+                        <p className={`text-sm mt-1 ${isDiscovered ? 'text-gray-400' : 'text-gray-600 italic'}`}>
+                          {isDiscovered ? challenge?.description : `Hint: ${secret.hint}`}
+                        </p>
+                        {isDiscovered && challenge && (
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className={`text-xs px-2 py-0.5 rounded border ${difficultyColors[challenge.difficulty]}`}>
+                              {challenge.difficulty}
+                            </span>
+                            <span className="text-sm text-purple-300">+{challenge.xpReward} XP</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="text-center text-sm text-gray-500 mt-6">
+              {stats.secretsFound} of {stats.totalSecrets} secrets discovered
+            </div>
           </div>
         )}
       </div>
 
       {/* Challenge Detail Modal */}
       {selectedChallenge && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-60 p-4">
-          <div className="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl overflow-hidden">
-            <div className="p-4 bg-gradient-to-r from-purple-900/30 to-cyan-900/30 border-b border-gray-800">
-              <div className="flex items-center gap-3">
-                <span className="text-4xl">{getRegion(selectedChallenge.regionId)?.glyph}</span>
-                <div>
-                  <h3 className="text-lg font-medium text-white">{selectedChallenge.title}</h3>
-                  <p className="text-sm text-gray-400">{getRegion(selectedChallenge.regionId)?.name}</p>
-                </div>
-              </div>
-            </div>
+        <ChallengeModal
+          challenge={selectedChallenge}
+          onClose={() => setSelectedChallenge(null)}
+          onComplete={() => handleCompleteChallenge(selectedChallenge.id)}
+          difficultyColors={difficultyColors}
+        />
+      )}
 
-            <div className="p-4 space-y-4">
-              <p className="text-gray-300">{selectedChallenge.description}</p>
+      {/* Brain Task Modal */}
+      {selectedBrainTask && (
+        <BrainTaskModal
+          region={selectedBrainTask.region}
+          task={selectedBrainTask.task}
+          onClose={() => setSelectedBrainTask(null)}
+          onComplete={() => handleCompleteBrainTask(selectedBrainTask.region)}
+        />
+      )}
 
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div className="p-2 bg-gray-900/50 rounded-lg">
-                  <span className={`text-xs px-2 py-0.5 rounded border ${difficultyColors[selectedChallenge.difficulty]}`}>
-                    {selectedChallenge.difficulty}
-                  </span>
-                </div>
-                <div className="p-2 bg-gray-900/50 rounded-lg">
-                  <div className="flex items-center justify-center gap-1">
-                    <Clock className="w-3 h-3 text-gray-400" />
-                    <span className="text-sm text-gray-300">{selectedChallenge.timeEstimate}</span>
-                  </div>
-                </div>
-                <div className="p-2 bg-gray-900/50 rounded-lg">
-                  <div className="flex items-center justify-center gap-1">
-                    <Sparkles className="w-3 h-3 text-purple-400" />
-                    <span className="text-sm text-purple-300">+{selectedChallenge.xpReward} XP</span>
-                  </div>
-                </div>
-              </div>
+      {/* Mini Game Modal */}
+      {activeMiniGame && (
+        <MiniGames
+          challenge={activeMiniGame}
+          onComplete={handleMiniGameComplete}
+          onClose={() => setActiveMiniGame(null)}
+        />
+      )}
 
-              {selectedChallenge.beatSuggestion && (
-                <div className="p-3 bg-cyan-900/20 rounded-lg border border-cyan-500/20">
-                  <div className="text-xs text-cyan-400 uppercase tracking-wider mb-1">Suggested Beat</div>
-                  <div className="text-sm text-gray-300">{selectedChallenge.beatSuggestion}</div>
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setSelectedChallenge(null)}
-                  className="flex-1 px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleCompleteChallenge(selectedChallenge)}
-                  className="flex-1 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white text-sm font-medium flex items-center justify-center gap-2"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  Complete Challenge
-                </button>
+      {/* Reward Animation */}
+      {showRewardAnimation && (
+        <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-60">
+          <div className="animate-bounce bg-gradient-to-r from-amber-500 to-purple-500 rounded-2xl px-8 py-4 shadow-2xl">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-8 h-8 text-white" />
+              <div>
+                <p className="text-2xl font-bold text-white">+{showRewardAnimation.xp} XP</p>
+                {showRewardAnimation.cosmetic && (
+                  <p className="text-sm text-white/80">New cosmetic unlocked!</p>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// ============================================================================
+// SUB-COMPONENTS
+// ============================================================================
+
+interface ChallengeCardProps {
+  challenge: ActiveChallenge;
+  onSelect: () => void;
+  onTogglePin: () => void;
+  difficultyColors: Record<string, string>;
+  getTypeIcon: (type: ChallengeType) => React.ReactNode;
+}
+
+const ChallengeCard: React.FC<ChallengeCardProps> = ({
+  challenge,
+  onSelect,
+  onTogglePin,
+  difficultyColors,
+  getTypeIcon,
+}) => (
+  <div className="p-4 rounded-xl border border-gray-800 bg-gray-900/50 hover:border-gray-700 transition-all">
+    <div className="flex items-start gap-3">
+      <span className="text-2xl">{challenge.icon}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <h4 className="text-sm font-medium text-white truncate">{challenge.title}</h4>
+          <button
+            onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+            className="p-1 rounded hover:bg-gray-800 transition-colors"
+          >
+            {challenge.isPinned ? (
+              <PinOff className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Pin className="w-4 h-4 text-gray-600" />
+            )}
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{challenge.description}</p>
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-gray-600">{getTypeIcon(challenge.type)}</span>
+          <span className={`text-xs px-1.5 py-0.5 rounded border ${difficultyColors[challenge.difficulty]}`}>
+            {challenge.difficulty}
+          </span>
+          <span className="text-xs text-purple-300 ml-auto">+{challenge.xpReward} XP</span>
+        </div>
+      </div>
+    </div>
+    <button
+      onClick={onSelect}
+      className="w-full mt-3 py-2 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-300 text-sm hover:bg-purple-600/30 transition-colors flex items-center justify-center gap-2"
+    >
+      View Challenge
+      <ChevronRight className="w-4 h-4" />
+    </button>
+  </div>
+);
+
+interface ChallengeModalProps {
+  challenge: ActiveChallenge;
+  onClose: () => void;
+  onComplete: () => void;
+  difficultyColors: Record<string, string>;
+}
+
+const ChallengeModal: React.FC<ChallengeModalProps> = ({
+  challenge,
+  onClose,
+  onComplete,
+  difficultyColors,
+}) => (
+  <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-60 p-4">
+    <div className="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl overflow-hidden">
+      <div className="p-4 bg-gradient-to-r from-purple-900/30 to-cyan-900/30 border-b border-gray-800">
+        <div className="flex items-center gap-3">
+          <span className="text-4xl">{challenge.icon}</span>
+          <div>
+            <h3 className="text-lg font-medium text-white">{challenge.title}</h3>
+            <p className="text-sm text-gray-400">{challenge.type.replace('_', ' ')}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+        <p className="text-gray-300">{challenge.description}</p>
+
+        <div className="grid grid-cols-2 gap-3 text-center">
+          <div className="p-2 bg-gray-900/50 rounded-lg">
+            <span className={`text-xs px-2 py-0.5 rounded border ${difficultyColors[challenge.difficulty]}`}>
+              {challenge.difficulty}
+            </span>
+          </div>
+          <div className="p-2 bg-gray-900/50 rounded-lg">
+            <div className="flex items-center justify-center gap-1">
+              <Sparkles className="w-3 h-3 text-purple-400" />
+              <span className="text-sm text-purple-300">+{challenge.xpReward} XP</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-3 bg-amber-900/20 rounded-lg border border-amber-500/20">
+          <div className="text-xs text-amber-400 uppercase tracking-wider mb-1">Reward</div>
+          <div className="text-sm text-gray-300 flex items-center gap-2">
+            <Gift className="w-4 h-4 text-amber-400" />
+            New cosmetic unlock on completion
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onComplete}
+            className="flex-1 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white text-sm font-medium flex items-center justify-center gap-2"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            Complete
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+interface BrainTaskModalProps {
+  region: BrainRegion;
+  task: typeof BRAIN_TASKS.cortical[0];
+  onClose: () => void;
+  onComplete: () => void;
+}
+
+const BrainTaskModal: React.FC<BrainTaskModalProps> = ({
+  region,
+  task,
+  onClose,
+  onComplete,
+}) => {
+  const gradient = BRAIN_REGION_GRADIENTS[region.category];
+  const xp = region.category === 'cortical' ? 30 :
+             region.category === 'limbic' ? 25 :
+             region.category === 'subcortical' ? 20 : 20;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-60 p-4">
+      <div className="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl overflow-hidden">
+        <div
+          className="p-4 border-b border-gray-800"
+          style={{
+            background: `linear-gradient(135deg, ${gradient.colors[0]}30, ${gradient.colors[1]}30, ${gradient.colors[2]}30)`,
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-4xl">{region.glyph}</span>
+            <div>
+              <h3 className="text-lg font-medium text-white">{region.name}</h3>
+              <p className="text-sm text-gray-400 capitalize">{region.category} Region</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div className="p-3 bg-gray-900/50 rounded-lg">
+            <h4 className="font-medium text-white mb-1">{task.title}</h4>
+            <p className="text-sm text-gray-400">{task.description}</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 text-center">
+            <div className="p-2 bg-gray-900/50 rounded-lg">
+              <div className="flex items-center justify-center gap-1">
+                <Clock className="w-3 h-3 text-gray-400" />
+                <span className="text-sm text-gray-300">{task.timeEstimate}</span>
+              </div>
+            </div>
+            <div className="p-2 bg-gray-900/50 rounded-lg">
+              <div className="flex items-center justify-center gap-1">
+                <Sparkles className="w-3 h-3 text-purple-400" />
+                <span className="text-sm text-purple-300">+{xp} XP</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Gradient Preview */}
+          <div className="p-3 bg-gray-900/50 rounded-lg">
+            <div className="text-xs text-gray-400 uppercase tracking-wider mb-2">Region Gradient</div>
+            <div
+              className="h-8 rounded-lg"
+              style={{
+                background: `linear-gradient(90deg, ${gradient.colors.join(', ')})`,
+              }}
+            />
+            <div className="flex justify-between mt-2">
+              {gradient.colors.map((color, i) => (
+                <span key={i} className="text-xs font-mono text-gray-500">{color}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onComplete}
+              className="flex-1 px-4 py-2 rounded-lg text-white text-sm font-medium flex items-center justify-center gap-2"
+              style={{
+                background: `linear-gradient(90deg, ${gradient.colors[0]}, ${gradient.colors[1]})`,
+              }}
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Complete Task
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
