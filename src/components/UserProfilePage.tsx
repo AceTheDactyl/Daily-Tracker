@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Flame,
   Music,
+  BarChart2,
 } from 'lucide-react';
 import { userProfileService } from '../lib/userProfile';
 import type { UserProfile, UserGoals, HabitTrack, UserPreferences } from '../lib/userProfile';
@@ -1143,6 +1144,100 @@ const PreferencesTab: React.FC<PreferencesTabProps> = ({ profile, onUpdatePrefer
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Usage Statistics Section */}
+      <div className="bg-gradient-to-br from-gray-950/80 via-indigo-950/30 to-gray-950/80 backdrop-blur border border-indigo-500/20 rounded-xl p-5">
+        <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
+          <BarChart2 className="w-5 h-5 text-indigo-400" />
+          Your Usage Patterns
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Total Days Active */}
+          <div className="bg-gray-900/50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-indigo-300">
+              {profile.metricsHistory.length}
+            </p>
+            <p className="text-xs text-gray-500">Days Tracked</p>
+          </div>
+
+          {/* Average Delta HV */}
+          <div className="bg-gray-900/50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-cyan-300">
+              {profile.metricsHistory.length > 0
+                ? Math.round(profile.metricsHistory.reduce((sum, m) => sum + m.deltaHV, 0) / profile.metricsHistory.length)
+                : '—'}
+            </p>
+            <p className="text-xs text-gray-500">Avg ΔHV Score</p>
+          </div>
+
+          {/* Total Beats Completed */}
+          <div className="bg-gray-900/50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-emerald-300">
+              {profile.metricsHistory.reduce((sum, m) => sum + m.completedBeats, 0)}
+            </p>
+            <p className="text-xs text-gray-500">Total Beats</p>
+          </div>
+
+          {/* Total Journal Entries */}
+          <div className="bg-gray-900/50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-amber-300">
+              {profile.metricsHistory.reduce((sum, m) => sum + m.journalEntries, 0)}
+            </p>
+            <p className="text-xs text-gray-500">Journal Entries</p>
+          </div>
+        </div>
+
+        {/* Field State Distribution */}
+        {profile.metricsHistory.length > 0 && (
+          <div className="mt-4">
+            <p className="text-sm text-gray-400 mb-2">Field State Distribution</p>
+            <div className="flex gap-2 flex-wrap">
+              {(['coherent', 'transitioning', 'fragmented', 'dormant'] as const).map(state => {
+                const count = profile.metricsHistory.filter(m => m.fieldState === state).length;
+                const percent = Math.round((count / profile.metricsHistory.length) * 100);
+                const colors = {
+                  coherent: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+                  transitioning: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+                  fragmented: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+                  dormant: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+                };
+                return (
+                  <div key={state} className={`px-3 py-1 rounded-lg text-xs border ${colors[state]}`}>
+                    {state}: {percent}%
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Performance Trend */}
+        {profile.metricsHistory.length >= 7 && (
+          <div className="mt-4">
+            <p className="text-sm text-gray-400 mb-2">Recent Trend (7 days)</p>
+            <div className="flex items-end gap-1 h-16">
+              {profile.metricsHistory.slice(-7).map((m, i) => (
+                <div
+                  key={i}
+                  className="flex-1 bg-gradient-to-t from-indigo-500/50 to-cyan-500/50 rounded-t"
+                  style={{ height: `${Math.max(10, m.deltaHV)}%` }}
+                  title={`${new Date(m.date).toLocaleDateString()}: ${m.deltaHV}`}
+                />
+              ))}
+            </div>
+            <div className="flex justify-between text-xs text-gray-600 mt-1">
+              <span>7d ago</span>
+              <span>Today</span>
+            </div>
+          </div>
+        )}
+
+        {profile.metricsHistory.length === 0 && (
+          <p className="text-sm text-gray-500 mt-4 text-center">
+            Start tracking your daily beats to see your usage patterns here.
+          </p>
+        )}
       </div>
     </div>
   );

@@ -30,6 +30,7 @@ import CosmeticsInventory from './components/CosmeticsInventory';
 import { challengeRewardService } from './lib/challengeRewardSystem';
 import type { UserMetrics, CosmeticType } from './lib/challengeRewardSystem';
 import { generateCosmeticCSS, getEquippedCssClasses } from './lib/cosmeticDefinitions';
+import { userProfileService } from './lib/userProfile';
 // MetricsDisplay available for use in future enhancements
 // import { MetricsDisplay, InlineMetrics } from './components/MetricsDisplay';
 
@@ -179,8 +180,7 @@ export default function App() {
 
   const [mixerOpen, setMixerOpen] = useState(false);
   // DJ tab state - keeping minimal state for cleanup
-  const mixOsc = useRef<(OscillatorNode | null)[]>([null, null, null]);
-  const [mixPlaying, setMixPlaying] = useState(false);
+  // Music state is managed by DJTab component internally
 
   const [glyphCanvasOpen, setGlyphCanvasOpen] = useState(false);
 
@@ -537,9 +537,27 @@ export default function App() {
             H: newDeltaHVState.harmonicStability
           }
         );
+
+        // Record metrics snapshot for energy state and friction calculations
+        const todayCheckIns = checkIns.filter(c => sameDay(new Date(c.loggedAt), new Date()));
+        const completedToday = todayCheckIns.filter(c => c.done).length;
+        const todayJournals = Object.values(journals).flat().filter(j => sameDay(new Date(j.timestamp), new Date()));
+        userProfileService.recordMetricsSnapshot({
+          deltaHV: newDeltaHVState.deltaHV,
+          symbolicDensity: newDeltaHVState.symbolicDensity,
+          resonanceCoupling: newDeltaHVState.resonanceCoupling,
+          frictionCoefficient: newDeltaHVState.frictionCoefficient,
+          harmonicStability: newDeltaHVState.harmonicStability,
+          rhythmScore: newDeltaHVState.resonanceCoupling, // Use resonance as rhythm score
+          completedBeats: completedToday,
+          totalBeats: todayCheckIns.length,
+          journalEntries: todayJournals.length,
+          glyphsUsed: [],
+          fieldState: newDeltaHVState.fieldState,
+        });
       }
     }
-  }, [checkIns, journals, rhythmProfile, selectedDate, isLoading]);
+  }, [checkIns, journals, rhythmProfile, selectedDate, isLoading, rhythmStateInfo]);
 
   useEffect(() => {
     const initGCal = async () => {
@@ -2148,14 +2166,7 @@ export default function App() {
           <DJTab
             deltaHV={deltaHVState}
             onClose={() => {
-              if (mixPlaying) {
-                for (let i = 0; i < 3; i++) {
-                  try {
-                    mixOsc.current[i]?.stop();
-                  } catch {}
-                }
-                setMixPlaying(false);
-              }
+              // Don't stop music when closing DJ tab - let it continue playing
               setMixerOpen(false);
             }}
           />
