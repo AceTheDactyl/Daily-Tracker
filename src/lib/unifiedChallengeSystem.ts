@@ -119,6 +119,9 @@ export interface UnifiedChallengeData {
   pinnedChallengeIds: string[];
   secretsDiscovered: string[];
   miniGameHighScores: Record<string, number>;
+  // Daily mini-game XP limit tracking
+  miniGameXPClaimsToday: number;
+  lastMiniGameXPDate: string;
 }
 
 export interface CompletedChallengeRecord {
@@ -974,6 +977,8 @@ class UnifiedChallengeService {
       pinnedChallengeIds: [],
       secretsDiscovered: [],
       miniGameHighScores: {},
+      miniGameXPClaimsToday: 0,
+      lastMiniGameXPDate: '',
     };
   }
 
@@ -1266,24 +1271,87 @@ class UnifiedChallengeService {
     return { xpEarned: challenge.xpReward, cosmeticUnlocked, levelUp };
   }
 
-  completeMiniGame(challengeId: string, score: number): { xpEarned: number; cosmeticUnlocked: string | null; highScore: boolean } | null {
-    const result = this.completeChallenge(challengeId);
-    if (!result) return null;
-
+  /**
+   * Complete a mini-game - always playable but XP only awarded 3 times per day
+   */
+  completeMiniGame(challengeId: string, score: number): { xpEarned: number; cosmeticUnlocked: string | null; highScore: boolean; xpClaimsRemaining: number } | null {
+    const today = this.getTodayKey();
     const challenge = UNIFIED_CHALLENGE_POOL.find(c => c.id === challengeId);
     const gameType = challenge?.miniGameType;
 
+    // Reset daily counter if it's a new day
+    if (this.data.lastMiniGameXPDate !== today) {
+      this.data.miniGameXPClaimsToday = 0;
+      this.data.lastMiniGameXPDate = today;
+    }
+
+    // Check if we can still earn XP (max 3 per day)
+    const canEarnXP = this.data.miniGameXPClaimsToday < 3;
+
+    let xpEarned = 0;
+    let cosmeticUnlocked: string | null = null;
+    let levelUp = false;
+
+    if (canEarnXP && challenge) {
+      // Award XP and process reward
+      xpEarned = challenge.xpReward;
+      this.data.totalXP += xpEarned;
+      this.data.miniGameXPClaimsToday++;
+
+      const newLevel = Math.floor(this.data.totalXP / 100) + 1;
+      if (newLevel > this.data.level) {
+        this.data.level = newLevel;
+        levelUp = true;
+      }
+
+      // Unlock cosmetic if not already owned
+      if (challenge.cosmeticRewardId && !this.data.unlockedCosmetics.includes(challenge.cosmeticRewardId)) {
+        this.data.unlockedCosmetics.push(challenge.cosmeticRewardId);
+        cosmeticUnlocked = challenge.cosmeticRewardId;
+      }
+
+      // Record completion
+      this.data.completedChallenges.push({
+        challengeId,
+        completedAt: new Date().toISOString(),
+        xpEarned,
+        cosmeticUnlocked: cosmeticUnlocked || undefined,
+      });
+
+      // Send notification (schedule immediately)
+      notificationService.scheduleNotification({
+        title: levelUp ? '🎮 Level Up!' : '🎮 Mini-Game Complete!',
+        body: levelUp
+          ? `You reached Level ${this.data.level}! +${xpEarned} XP`
+          : `+${xpEarned} XP earned! ${3 - this.data.miniGameXPClaimsToday} XP rewards remaining today.`,
+        tag: 'mini-game',
+        type: 'challenge_complete',
+      }, new Date());
+    }
+
+    // Track high score regardless of XP
     let highScore = false;
     if (gameType) {
       const currentHigh = this.data.miniGameHighScores[gameType] || 0;
       if (score > currentHigh) {
         this.data.miniGameHighScores[gameType] = score;
         highScore = true;
-        this.saveData();
       }
     }
 
-    return { ...result, highScore };
+    this.saveData();
+    return { xpEarned, cosmeticUnlocked, highScore, xpClaimsRemaining: Math.max(0, 3 - this.data.miniGameXPClaimsToday) };
+  }
+
+  /**
+   * Get remaining XP claims for mini-games today
+   */
+  getMiniGameXPClaimsRemaining(): number {
+    const today = this.getTodayKey();
+    if (this.data.lastMiniGameXPDate !== today) {
+      return 3; // New day, all 3 available
+    }
+    return Math.max(0, 3 - this.data.miniGameXPClaimsToday);
   }
 
   pinChallenge(challengeId: string): void {
@@ -1338,6 +1406,7 @@ class UnifiedChallengeService {
     unlockedCount: number;
     secretsFound: number;
     totalSecrets: number;
+    miniGameXPClaimsRemaining: number;
   } {
     const xpInLevel = this.data.totalXP % 100;
     const totalSecrets = UNIFIED_CHALLENGE_POOL.filter(c => c.type === 'secret').length;
@@ -1353,6 +1422,7 @@ class UnifiedChallengeService {
       unlockedCount: this.data.unlockedCosmetics.length,
       secretsFound: this.data.secretsDiscovered.length,
       totalSecrets,
+      miniGameXPClaimsRemaining: this.getMiniGameXPClaimsRemaining(),
     };
   }
 
