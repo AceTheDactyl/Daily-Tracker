@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Dumbbell, Brain, Heart, Shield, NotebookPen, Download,
   Calendar, ChevronDown, ChevronUp, Pill, Plus, X, Volume2,
   CheckCircle2, Trash2, Loader2, Clock, Sparkles, Waves, Zap, Copy, Timer,
-  Activity, AlertTriangle, FileText, Settings, Bell, BarChart3, Music, User, Disc3
+  Activity, AlertTriangle, FileText, Settings, Bell, BarChart3, Music, User, Disc3,
+  Target, Palette
 } from 'lucide-react';
 import { GoogleCalendarService } from './lib/googleCalendar';
 import { getDeltaHVState } from './lib/deltaHVEngine';
@@ -24,6 +25,11 @@ import { RoadmapView } from './components/RoadmapView';
 import { BrainRegionChallenge } from './components/BrainRegionChallenge';
 import { DJTab } from './components/DJTab';
 import { FocusWellnessTools } from './components/FocusWellnessTools';
+import ChallengeHub from './components/ChallengeHub';
+import CosmeticsInventory from './components/CosmeticsInventory';
+import { challengeRewardService } from './lib/challengeRewardSystem';
+import type { UserMetrics, CosmeticType } from './lib/challengeRewardSystem';
+import { generateCosmeticCSS, getEquippedCssClasses } from './lib/cosmeticDefinitions';
 // MetricsDisplay available for use in future enhancements
 // import { MetricsDisplay, InlineMetrics } from './components/MetricsDisplay';
 
@@ -208,8 +214,12 @@ export default function App() {
   const [notificationSettingsOpen, setNotificationSettingsOpen] = useState(false);
 
   // Navigation & Views
-  const [currentView, setCurrentView] = useState<'dashboard' | 'analytics' | 'profile' | 'roadmap'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'analytics' | 'profile' | 'roadmap' | 'challenges' | 'cosmetics'>('dashboard');
   const [currentRoadmapDomain, setCurrentRoadmapDomain] = useState<string>('');
+
+  // Challenge & Cosmetics System
+  const [equippedCosmetics, setEquippedCosmetics] = useState<Record<CosmeticType, string | null>>({} as Record<CosmeticType, string | null>);
+  const [cosmeticCssVars, setCosmeticCssVars] = useState<string>('');
 
   // Music Library
   const [musicLibraryOpen, setMusicLibraryOpen] = useState(false);
@@ -336,6 +346,113 @@ export default function App() {
       plannerRef.current.updateWaves(rhythmProfile.waves);
     }
   }, [checkIns, rhythmProfile]);
+
+  // Challenge & Cosmetics System initialization
+  useEffect(() => {
+    const loadCosmetics = () => {
+      const data = challengeRewardService.getData();
+      setEquippedCosmetics(data.equippedCosmetics);
+      // Generate CSS variables from equipped cosmetics
+      const cssVars = generateCosmeticCSS(data.equippedCosmetics);
+      setCosmeticCssVars(cssVars);
+    };
+
+    loadCosmetics();
+
+    // Subscribe to cosmetic changes
+    const unsubscribe = challengeRewardService.subscribe(() => {
+      loadCosmetics();
+    });
+
+    // Send daily performance notification
+    if (!isLoading && deltaHVState) {
+      const userMetrics: UserMetrics = {
+        checkInsToday: checkIns.filter(c => c.done && sameDay(new Date(c.loggedAt), new Date())).length,
+        journalEntriesToday: (journals[toDateInput(new Date())] || []).length,
+        currentStreak: challengeRewardService.getStats().currentStreak,
+        deltaHV: {
+          symbolic: deltaHVState.symbolicDensity,
+          resonance: deltaHVState.resonanceCoupling,
+          friction: deltaHVState.frictionCoefficient,
+          stability: deltaHVState.harmonicStability
+        },
+        categoryCompletions: checkIns.reduce((acc, c) => {
+          if (c.done) {
+            acc[c.category] = (acc[c.category] || 0) + 1;
+          }
+          return acc;
+        }, {} as Record<string, number>),
+        totalCheckIns: checkIns.filter(c => c.done).length,
+        totalJournalEntries: Object.values(journals).flat().length,
+        averageDailyCheckIns: 5, // Placeholder
+        weakCategories: [],
+        strongCategories: []
+      };
+
+      challengeRewardService.sendDailyPerformanceNotification(userMetrics);
+    }
+
+    return unsubscribe;
+  }, [isLoading, deltaHVState]);
+
+  // Compute user metrics for challenge system
+  const userMetrics = useMemo<UserMetrics>(() => {
+    const todayKey = toDateInput(new Date());
+    const todayCheckIns = checkIns.filter(c => c.done && sameDay(new Date(c.loggedAt), new Date()));
+
+    const categoryCompletions = checkIns.reduce((acc, c) => {
+      if (c.done) {
+        acc[c.category] = (acc[c.category] || 0) + 1;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+    // Find weak and strong categories
+    const categoryEntries = Object.entries(categoryCompletions);
+    const avgCount = categoryEntries.length > 0
+      ? categoryEntries.reduce((sum, [, count]) => sum + count, 0) / categoryEntries.length
+      : 0;
+
+    const weakCategories = categoryEntries
+      .filter(([, count]) => count < avgCount * 0.5)
+      .map(([cat]) => cat);
+
+    const strongCategories = categoryEntries
+      .filter(([, count]) => count > avgCount * 1.5)
+      .map(([cat]) => cat);
+
+    return {
+      checkInsToday: todayCheckIns.length,
+      journalEntriesToday: (journals[todayKey] || []).length,
+      currentStreak: challengeRewardService.getStats().currentStreak,
+      deltaHV: {
+        symbolic: deltaHVState?.symbolicDensity || 0,
+        resonance: deltaHVState?.resonanceCoupling || 0,
+        friction: deltaHVState?.frictionCoefficient || 0,
+        stability: deltaHVState?.harmonicStability || 0
+      },
+      categoryCompletions,
+      totalCheckIns: checkIns.filter(c => c.done).length,
+      totalJournalEntries: Object.values(journals).flat().length,
+      averageDailyCheckIns: todayCheckIns.length,
+      weakCategories,
+      strongCategories
+    };
+  }, [checkIns, journals, deltaHVState]);
+
+  // Apply cosmetic CSS variables to document root
+  useEffect(() => {
+    if (cosmeticCssVars) {
+      const root = document.documentElement;
+      // Parse and apply CSS variables
+      cosmeticCssVars.split('\n').forEach(line => {
+        const match = line.match(/^(--[\w-]+):\s*(.+);?$/);
+        if (match) {
+          root.style.setProperty(match[1], match[2].replace(';', ''));
+        }
+      });
+    }
+  }, [cosmeticCssVars]);
 
   // Notification integration
   useEffect(() => {
@@ -931,8 +1048,89 @@ export default function App() {
     );
   }
 
+  // Render Challenges View when navigated
+  if (currentView === 'challenges') {
+    return (
+      <div className="min-h-screen text-gray-100 p-4 md:p-8" style={{
+        background: `linear-gradient(var(--gradient-angle, 180deg), var(--bg-primary, #000) 0%, var(--bg-secondary, #111827) 50%, var(--bg-tertiary, #1e3a5f) 100%)`
+      }}>
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <button
+              onClick={() => setCurrentView('dashboard')}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-800/50 rounded-lg hover:bg-gray-700/50 transition-colors"
+            >
+              <ChevronDown className="w-4 h-4 rotate-90" />
+              Back to Dashboard
+            </button>
+            <button
+              onClick={() => setCurrentView('cosmetics')}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600/30 border border-purple-500/50 rounded-lg hover:bg-purple-600/40 transition-colors text-purple-300"
+            >
+              <Palette className="w-4 h-4" />
+              View Cosmetics
+            </button>
+          </div>
+          <ChallengeHub
+            userMetrics={userMetrics}
+            checkIns={checkIns.map(c => ({ category: c.category, done: c.done }))}
+            journalCount={(journals[toDateInput(selectedDate)] || []).length}
+            onCosmeticUnlocked={() => {
+              // Refresh cosmetics
+              const data = challengeRewardService.getData();
+              setEquippedCosmetics(data.equippedCosmetics);
+              setCosmeticCssVars(generateCosmeticCSS(data.equippedCosmetics));
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Render Cosmetics Inventory when navigated
+  if (currentView === 'cosmetics') {
+    return (
+      <div className="min-h-screen text-gray-100 p-4 md:p-8" style={{
+        background: `linear-gradient(var(--gradient-angle, 180deg), var(--bg-primary, #000) 0%, var(--bg-secondary, #111827) 50%, var(--bg-tertiary, #1e3a5f) 100%)`
+      }}>
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <button
+              onClick={() => setCurrentView('dashboard')}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-800/50 rounded-lg hover:bg-gray-700/50 transition-colors"
+            >
+              <ChevronDown className="w-4 h-4 rotate-90" />
+              Back to Dashboard
+            </button>
+            <button
+              onClick={() => setCurrentView('challenges')}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-600/30 border border-orange-500/50 rounded-lg hover:bg-orange-600/40 transition-colors text-orange-300"
+            >
+              <Target className="w-4 h-4" />
+              View Challenges
+            </button>
+          </div>
+          <CosmeticsInventory
+            onEquipmentChange={(equipped) => {
+              setEquippedCosmetics(equipped);
+              setCosmeticCssVars(generateCosmeticCSS(equipped));
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Get equipped cosmetic CSS classes
+  const cosmeticClasses = getEquippedCssClasses(equippedCosmetics);
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-blue-950 text-gray-100 p-4 md:p-8">
+    <div
+      className={`min-h-screen text-gray-100 p-4 md:p-8 ${cosmeticClasses.join(' ')}`}
+      style={{
+        background: `linear-gradient(var(--gradient-angle, 180deg), var(--bg-primary, #000) 0%, var(--bg-secondary, #111827) 50%, var(--bg-tertiary, #1e3a5f) 100%)`
+      }}
+    >
       <div className="max-w-4xl mx-auto space-y-6">
 
         {/* Header */}
@@ -1076,6 +1274,41 @@ export default function App() {
             >
               <User className="w-4 h-4" />
               Profile
+            </button>
+
+            {/* Challenges Button */}
+            <button
+              onClick={() => setCurrentView('challenges')}
+              className="px-3 py-1.5 rounded-lg text-sm flex items-center gap-2"
+              style={{
+                background: 'var(--button-bg, rgba(249, 115, 22, 0.2))',
+                borderColor: 'var(--button-border, rgba(249, 115, 22, 0.5))',
+                color: 'var(--button-text, #fb923c)'
+              }}
+              title="Daily Challenges & Rewards"
+            >
+              <Target className="w-4 h-4" />
+              Challenges
+              {challengeRewardService.getStats().currentStreak > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 bg-orange-500/30 rounded-full text-xs">
+                  {challengeRewardService.getStats().currentStreak}
+                </span>
+              )}
+            </button>
+
+            {/* Cosmetics Button */}
+            <button
+              onClick={() => setCurrentView('cosmetics')}
+              className="px-3 py-1.5 rounded-lg text-sm flex items-center gap-2"
+              style={{
+                background: 'var(--accent-glow, rgba(168, 85, 247, 0.2))',
+                borderColor: 'var(--accent-secondary, rgba(168, 85, 247, 0.5))',
+                color: 'var(--accent-primary, #a855f7)'
+              }}
+              title="Cosmetics & Customization"
+            >
+              <Palette className="w-4 h-4" />
+              Cosmetics
             </button>
           </div>
           <div className="text-sm text-gray-500 h-5">

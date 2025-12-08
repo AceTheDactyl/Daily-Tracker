@@ -35,7 +35,13 @@ export type NotificationType =
   | 'goal_progress'
   | 'habit_completed'
   | 'mood_improved'
-  | 'personal_best';
+  | 'personal_best'
+  // Challenge and reward notifications
+  | 'challenge_complete'
+  | 'cosmetic_unlocked'
+  | 'daily_challenges_ready'
+  | 'challenge_progress'
+  | 'challenge_highlighted';
 
 /**
  * Notification payload
@@ -103,6 +109,13 @@ export interface NotificationPreferences {
   habitCompletions: boolean;
   moodImprovements: boolean;
   personalBests: boolean;
+  // Challenge and reward notifications
+  challengeNotifications: boolean;
+  challengeComplete: boolean;
+  cosmeticUnlocked: boolean;
+  dailyChallengesReady: boolean;
+  challengeProgress: boolean;
+  challengeHighlighted: boolean;
   quietHoursEnabled: boolean;
   quietHoursStart: number; // 24h format
   quietHoursEnd: number;
@@ -127,6 +140,13 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
   habitCompletions: true,
   moodImprovements: true,
   personalBests: true,
+  // Challenge and reward notifications - all enabled by default
+  challengeNotifications: true,
+  challengeComplete: true,
+  cosmeticUnlocked: true,
+  dailyChallengesReady: true,
+  challengeProgress: true,
+  challengeHighlighted: true,
   quietHoursEnabled: false,
   quietHoursStart: 22,
   quietHoursEnd: 7,
@@ -196,7 +216,13 @@ const NOTIFICATION_ICONS: Record<NotificationType, string> = {
   goal_progress: '📈',
   habit_completed: '✨',
   mood_improved: '🌈',
-  personal_best: '🏆'
+  personal_best: '🏆',
+  // Challenge and reward icons
+  challenge_complete: '🎉',
+  cosmetic_unlocked: '🎨',
+  daily_challenges_ready: '📋',
+  challenge_progress: '💪',
+  challenge_highlighted: '✨'
 };
 
 /**
@@ -410,6 +436,17 @@ class NotificationService {
         return this.preferences.positiveImprovements && this.preferences.moodImprovements;
       case 'personal_best':
         return this.preferences.positiveImprovements && this.preferences.personalBests;
+      // Challenge and reward notifications
+      case 'challenge_complete':
+        return this.preferences.challengeNotifications && this.preferences.challengeComplete;
+      case 'cosmetic_unlocked':
+        return this.preferences.challengeNotifications && this.preferences.cosmeticUnlocked;
+      case 'daily_challenges_ready':
+        return this.preferences.challengeNotifications && this.preferences.dailyChallengesReady;
+      case 'challenge_progress':
+        return this.preferences.challengeNotifications && this.preferences.challengeProgress;
+      case 'challenge_highlighted':
+        return this.preferences.challengeNotifications && this.preferences.challengeHighlighted;
       default:
         return true;
     }
@@ -974,6 +1011,167 @@ class NotificationService {
     }
 
     return 'Tap "Allow" when prompted to receive rhythm notifications.';
+  }
+
+  // ========================================
+  // Challenge and Reward Notifications
+  // ========================================
+
+  /**
+   * Send challenge complete notification
+   * Triggered when user completes a challenge
+   */
+  sendChallengeComplete(
+    challengeTitle: string,
+    xpEarned: number,
+    category: string,
+    streak?: number
+  ): Promise<string | null> {
+    let body = `"${challengeTitle}" completed! +${xpEarned} XP`;
+    if (streak && streak > 1) {
+      body += ` | ${streak}-day streak!`;
+    }
+
+    return this.show({
+      type: 'challenge_complete',
+      title: `${NOTIFICATION_ICONS.challenge_complete} Challenge Complete!`,
+      body,
+      tag: 'challenge-complete',
+      data: { action: 'view_challenges', challengeTitle, xpEarned, category, streak }
+    });
+  }
+
+  /**
+   * Send cosmetic unlocked notification
+   * Triggered when user unlocks a new cosmetic reward
+   */
+  sendCosmeticUnlocked(
+    cosmeticName: string,
+    cosmeticType: string,
+    rarity: string,
+    challengeTitle?: string
+  ): Promise<string | null> {
+    const body = challengeTitle
+      ? `Unlocked "${cosmeticName}" (${rarity} ${cosmeticType}) from "${challengeTitle}"`
+      : `New ${rarity} ${cosmeticType} unlocked: "${cosmeticName}"`;
+
+    return this.show({
+      type: 'cosmetic_unlocked',
+      title: `${NOTIFICATION_ICONS.cosmetic_unlocked} New Cosmetic Unlocked!`,
+      body,
+      tag: 'cosmetic-unlocked',
+      requireInteraction: rarity === 'legendary' || rarity === 'epic',
+      data: { action: 'view_cosmetics', cosmeticName, cosmeticType, rarity, challengeTitle }
+    });
+  }
+
+  /**
+   * Send daily challenges ready notification
+   * Triggered at the start of each day when new challenges are generated
+   */
+  sendDailyChallengesReady(
+    challengeCount: number,
+    highlightedChallenge?: string,
+    highlightReason?: string
+  ): Promise<string | null> {
+    let body = `${challengeCount} new challenges available today!`;
+    if (highlightedChallenge) {
+      body += `\nRecommended: "${highlightedChallenge}"`;
+      if (highlightReason) {
+        body += ` - ${highlightReason}`;
+      }
+    }
+
+    return this.show({
+      type: 'daily_challenges_ready',
+      title: `${NOTIFICATION_ICONS.daily_challenges_ready} Daily Challenges Ready!`,
+      body,
+      tag: 'daily-challenges-ready',
+      data: { action: 'view_challenges', challengeCount, highlightedChallenge, highlightReason }
+    });
+  }
+
+  /**
+   * Send challenge progress notification
+   * Triggered when user makes significant progress on a challenge
+   */
+  sendChallengeProgress(
+    challengeTitle: string,
+    progressPercent: number,
+    milestone?: string
+  ): Promise<string | null> {
+    // Only notify at significant milestones
+    if (progressPercent !== 25 && progressPercent !== 50 && progressPercent !== 75 && progressPercent !== 100) {
+      return Promise.resolve(null);
+    }
+
+    const body = milestone
+      ? `"${challengeTitle}": ${milestone} (${progressPercent}%)`
+      : `"${challengeTitle}": ${progressPercent}% complete`;
+
+    return this.show({
+      type: 'challenge_progress',
+      title: `${NOTIFICATION_ICONS.challenge_progress} Challenge Progress!`,
+      body,
+      tag: `challenge-progress-${challengeTitle}`,
+      data: { action: 'view_challenges', challengeTitle, progressPercent, milestone }
+    });
+  }
+
+  /**
+   * Send challenge highlighted notification
+   * Triggered when a challenge is specially recommended based on user metrics
+   */
+  sendChallengeHighlighted(
+    challengeTitle: string,
+    reason: string,
+    category: string,
+    xpReward: number
+  ): Promise<string | null> {
+    return this.show({
+      type: 'challenge_highlighted',
+      title: `${NOTIFICATION_ICONS.challenge_highlighted} Recommended Challenge`,
+      body: `"${challengeTitle}" - ${reason} (+${xpReward} XP)`,
+      tag: 'challenge-highlighted',
+      data: { action: 'view_challenge', challengeTitle, reason, category, xpReward }
+    });
+  }
+
+  /**
+   * Send daily performance summary with challenge stats
+   * Enhanced version of daily summary including challenge progress
+   */
+  sendDailyPerformanceSummary(stats: {
+    challengesCompleted: number;
+    totalChallenges: number;
+    xpEarned: number;
+    cosmeticsUnlocked: number;
+    currentStreak: number;
+    metricsHighlight?: string;
+    recommendedChallenge?: string;
+  }): Promise<string | null> {
+    let body = `Challenges: ${stats.challengesCompleted}/${stats.totalChallenges}`;
+    body += ` | XP: +${stats.xpEarned}`;
+
+    if (stats.currentStreak > 1) {
+      body += ` | Streak: ${stats.currentStreak} days`;
+    }
+
+    if (stats.cosmeticsUnlocked > 0) {
+      body += `\n${stats.cosmeticsUnlocked} new cosmetic${stats.cosmeticsUnlocked > 1 ? 's' : ''} unlocked!`;
+    }
+
+    if (stats.recommendedChallenge) {
+      body += `\nTry: "${stats.recommendedChallenge}"`;
+    }
+
+    return this.show({
+      type: 'daily_summary',
+      title: `${NOTIFICATION_ICONS.daily_summary} Daily Challenge Summary`,
+      body,
+      tag: 'daily-challenge-summary',
+      data: { action: 'view_challenges', ...stats }
+    });
   }
 }
 
